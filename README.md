@@ -1,5 +1,7 @@
 # Debrief
 
+![A walkthrough open in an editor tab: step 1 of 4, its points, the cited code as a diff, and the flow diagram with that step's box lit up](docs/walkthrough.png)
+
 An Orca plugin that shows what an agent finished in a workspace as diagrams, in a right-sidebar
 panel:
 
@@ -61,6 +63,20 @@ removed, dashed outside the codebase. The panel shows one legend above the diagr
 each D2 diagram's own legend out of the picture it shows; the files on disk keep theirs. In
 dark mode the panel shows the diagrams in soft dark colours (yellow reads as amber); the files
 on disk stay light, for PRs and docs.
+
+## Screenshots
+
+<img src="docs/panel.png" width="320" alt="The Debrief sidebar: Review and Capture at the top, a finished run with its cost, and the branch's timeline with a flow capture and a review-only capture on one commit">
+
+The sidebar on this repository's own branch. At the top are Review and Capture for the whole
+branch, then a finished run with its cost, tokens, turns and time. Below that is the timeline:
+each commit has its own Review and Capture, and one commit holds a flow capture with a
+walkthrough and a review-only capture.
+
+![A review open in an editor tab: the verdict, the range and basis it read, Review again and Copy as Markdown, no findings, and the list of what it also checked](docs/review.png)
+
+A review that found nothing. It still lists what it checked, so "no findings" says what was
+looked at.
 
 ## Repository rules
 
