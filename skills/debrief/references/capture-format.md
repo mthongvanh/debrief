@@ -7,7 +7,7 @@ file that breaks a rule below and shows the reason above the list, so fix and re
 | ----------- | -------------------------- | --------------------------------------------------------------------------- |
 | `version`   | `1`                        | required                                                                    |
 | `title`     | string                     | required; the behaviour, as a reviewer would name it                        |
-| `kind`      | `modification`, `addition` | required                                                                    |
+| `kind`      | `modification`, `addition` | required; `review` is the plugin's own review-only capture, never drawn     |
 | `summary`   | string                     | required; one or two plain sentences: what changed for whom                 |
 | `createdAt` | ISO 8601 string            | required; the panel sorts newest first                                      |
 | `commit`    | string                     | full SHA of HEAD when drawn (`git rev-parse HEAD`), plus `+dirty` if uncommitted work was drawn; the panel shows 9 characters |

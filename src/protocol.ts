@@ -81,6 +81,8 @@ declare module 'orca' {
     'git.pr': { output: { pr: PullRequest | null; error?: string } }
     /** Queues a background code review of the capture's change. */
     'captures.review': { input: { captureId: string }; output: { jobId: string } }
+    /** Reviews a commit, range, the uncommitted changes or the branch without drawing it first. */
+    'review.request': { input: CaptureScope; output: { jobId: string; captureId: string } }
     /** Opens the capture's review file, which Orca shows in the walkthrough editor. */
     'review.open': { input: { captureId: string }; output: { opened: true } }
     /** Opens the capture's walkthrough file, which Orca shows in the walkthrough editor. */

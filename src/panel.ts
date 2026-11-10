@@ -56,6 +56,7 @@ button.link { background: none; border: none; padding: 0; color: var(--orca-mute
 }
 .badge.modification { color: #d08a1c; }
 .badge.addition { color: #2f9e62; }
+.badge.review { color: var(--orca-muted-foreground); }
 .badge.before { color: var(--orca-muted-foreground); }
 .badge.after, .badge.flow { color: var(--orca-foreground); }
 .summary { margin: 0 0 10px; }
@@ -134,6 +135,7 @@ figcaption { font-size: 12.5px; line-height: 1.45; color: var(--orca-muted-foreg
 .tl-row.base::before { border-style: dashed; }
 .tl-head { display: flex; gap: 6px; align-items: flex-start; }
 .tl-head .grow { flex: 1; min-width: 0; }
+.tl-head .row { display: flex; gap: 2px; flex-shrink: 0; }
 .tl-subject { font-weight: 500; overflow-wrap: anywhere; }
 .tl-row .card { margin: 6px 0 0; }
 .chip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; padding: 0 5px; border-radius: 4px; background: var(--orca-muted); color: var(--orca-muted-foreground); }
@@ -321,8 +323,9 @@ const describe = (error: unknown) => {
   const { code, message } = error as HostError
   return code ? `${message} (${code})` : String(message ?? error)
 }
-const KIND_LABEL = { modification: 'Changed behaviour', addition: 'New flow' } as const
-const KIND_TEXT = { modification: 'Changed behaviour · before and after', addition: 'New code · flow' } as const
+const KIND_LABEL = { modification: 'Changed behaviour', addition: 'New flow', review: 'Review only' } as const
+const KIND_TEXT = { modification: 'Changed behaviour · before and after', addition: 'New code · flow', review: 'Code review · no diagrams' } as const
+const KIND_ICON = { modification: 'split', addition: 'flow', review: 'shield' } as const
 
 function ago(iso: string): string {
   const seconds = (Date.parse(iso) - Date.now()) / 1000
@@ -410,6 +413,22 @@ async function requestCapture(scope: CaptureScope = {}): Promise<void> {
   render()
 }
 
+/** Reviews a scope without drawing it: the worker makes a review-only capture for it. */
+async function requestScopeReview(scope: CaptureScope = {}): Promise<void> {
+  state.busy = true
+  state.status = null
+  render()
+  try {
+    await orca.plugin.request('review.request', scope)
+    state.status = 'Review queued. It shows as a review-only capture, and opens from there when it is done.'
+    await loadJobs()
+  } catch (error) {
+    state.status = `Could not start the review: ${describe(error)}`
+  }
+  state.busy = false
+  render()
+}
+
 async function toggleLog(id: string): Promise<void> {
   if (state.logs[id]) {
     delete state.logs[id]
@@ -432,13 +451,20 @@ function jobAction(name: 'jobs.cancel' | 'jobs.dismiss', id: string): void {
 const thousands = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
 
 function jobCard(job: Job): HTMLElement {
-  const what = job.labels.join(', ')
-  const headline = {
-    queued: `Waiting to capture ${what}: one background run at a time.`,
-    running: `Capturing ${what} in the background.`,
-    done: `Captured ${what}.`,
-    failed: `Capturing ${what} failed: ${job.error ?? 'unknown error'}`
-  }[job.status]
+  const what = job.kind === 'review' ? job.labels.map((label) => label.replace(/^review: /, '')).join(', ') : job.labels.join(', ')
+  const headline = (job.kind === 'review'
+    ? {
+        queued: `Waiting to review ${what}: one background run at a time.`,
+        running: `Reviewing ${what} in the background.`,
+        done: `Reviewed ${what}.`,
+        failed: `Reviewing ${what} failed: ${job.error ?? 'unknown error'}`
+      }
+    : {
+        queued: `Waiting to capture ${what}: one background run at a time.`,
+        running: `Capturing ${what} in the background.`,
+        done: `Captured ${what}.`,
+        failed: `Capturing ${what} failed: ${job.error ?? 'unknown error'}`
+      })[job.status]
   const tokens = job.tokens
   const usage = job.status === 'done' || job.status === 'failed'
     ? [
@@ -634,10 +660,10 @@ function header(capture: ListedCapture, pr: PullRequest | null): HTMLElement {
     'div',
     { class: 'header' },
     el('div', { class: 'eyebrow muted' },
-      icon(capture.kind === 'modification' ? 'split' : 'flow', 14),
+      icon(KIND_ICON[capture.kind], 14),
       el('span', {}, KIND_TEXT[capture.kind]),
       el('span', { class: 'dot' }, '•'),
-      el('span', {}, `Drawn ${ago(capture.createdAt)}`)),
+      el('span', {}, `${capture.kind === 'review' ? 'Made' : 'Drawn'} ${ago(capture.createdAt)}`)),
     el('h1', {}, capture.title),
     el('p', { class: 'summary' }, capture.summary),
     el('div', { class: 'chips' },
@@ -672,13 +698,14 @@ function walkthroughCard(capture: ListedCapture): HTMLElement | false {
 }
 
 const BILLED = 'Starts a background Claude run. Billed to your Claude login, capped by the cost setting.'
+const REVIEW_ONLY = `Review this range without drawing it. ${BILLED}`
 
 function reviewCard(capture: ListedCapture, pr: PullRequest | null): HTMLElement {
   const job = reviewJob(capture.id)
   const failed = job ? undefined : failedReview(capture)
   const review = capture.review
   const log = job ? state.logs[job.id] : failed ? state.logs[failed.id] : undefined
-  const busy = state.busy ? { disabled: '' } : {}
+  const busy: Record<string, string> = state.busy ? { disabled: '' } : {}
   const lead = (findings: boolean) => (capture.walkthrough && !findings ? '' : 'primary')
 
   let pill: HTMLElement
@@ -862,7 +889,7 @@ function detail(listing: CaptureListing, capture: ListedCapture): HTMLElement[] 
       header(capture, pr),
       state.status && el('p', { class: 'status muted small' }, state.status),
       el('div', { class: 'cards' }, walkthroughCard(capture), reviewCard(capture, pr)),
-      diagrams(capture),
+      capture.views.length > 0 && diagrams(capture),
       filesBox(listing, capture))
   ]
 }
@@ -880,7 +907,7 @@ function captureCard(capture: ListedCapture, extra?: HTMLElement | false): HTMLE
     ),
     el('p', { class: 'small' }, capture.summary),
     el('p', { class: 'muted small' },
-      `${ago(capture.createdAt)} · ${views} diagram${views === 1 ? '' : 's'} · ${capture.files.length} file${capture.files.length === 1 ? '' : 's'}${capture.walkthrough ? ' · walkthrough' : ''}${capture.review ? ` · review: ${findingsLabel(capture.review).toLowerCase()}` : ''}`),
+      `${ago(capture.createdAt)} · ${capture.kind === 'review' ? 'no diagrams' : `${views} diagram${views === 1 ? '' : 's'}`} · ${capture.files.length} file${capture.files.length === 1 ? '' : 's'}${capture.walkthrough ? ' · walkthrough' : ''}${capture.review ? ` · review: ${findingsLabel(capture.review).toLowerCase()}` : ''}`),
     extra
   )
   card.addEventListener('click', () => {
@@ -893,7 +920,7 @@ function captureCard(capture: ListedCapture, extra?: HTMLElement | false): HTMLE
   return card
 }
 
-const disabledWhileBusy = () => (state.busy ? { disabled: '' } : {})
+const disabledWhileBusy = (): Record<string, string> => (state.busy ? { disabled: '' } : {})
 const commitOf = (capture: Capture) => (capture.commit ?? '').toLowerCase().replace(/\+.*$/, '')
 const isDirty = (capture: Capture) => /\+dirty$/i.test(capture.commit ?? '')
 const sameCommit = (sha: string, short: string) => short.length >= 7 && sha.startsWith(short)
@@ -936,6 +963,8 @@ function compareForm(history: History): HTMLElement {
       { class: 'row' },
       el('span', { class: `hint small ${valid ? 'muted' : 'bad'}` },
         valid ? `${span} commit${span === 1 ? '' : 's'}: before from the first, after from the second` : 'From must be older than To'),
+      button('Review range', () => void requestScopeReview({ from: state.rangeFrom, to: state.rangeTo }),
+        { class: 'ghost', title: REVIEW_ONLY, ...(valid ? {} : { disabled: '' }), ...disabledWhileBusy() }),
       button('Capture range', () => void requestCapture({ from: state.rangeFrom, to: state.rangeTo }),
         { class: 'primary', ...(valid ? {} : { disabled: '' }), ...disabledWhileBusy() })
     )
@@ -964,20 +993,22 @@ function timeline(listing: CaptureListing, history: History): HTMLElement[] {
         action),
       ...captures.map((capture) => captureCard(capture, rangeChip(capture, commit)))
     )
-  const captureButton = (scope: CaptureScope, title: string) =>
-    button('Capture', () => void requestCapture(scope), { class: 'ghost small', title, ...disabledWhileBusy() })
+  const captureButton = (scope: CaptureScope, what: string) =>
+    el('div', { class: 'row' },
+      button('Review', () => void requestScopeReview(scope), { class: 'ghost small', title: `Review ${what} without drawing it. ${BILLED}`, ...disabledWhileBusy() }),
+      button('Capture', () => void requestCapture(scope), { class: 'ghost small', title: `Capture ${what}`, ...disabledWhileBusy() }))
 
   const rows: HTMLElement[] = []
   if (history.dirty && history.head) {
     const head = history.head
     const captures = take((c) => isDirty(c) && sameCommit(head, commitOf(c)))
     rows.push(row('', 'Uncommitted changes', 'working tree', captures, null,
-      captureButton({ uncommitted: true }, 'Capture the uncommitted changes')))
+      captureButton({ uncommitted: true }, 'the uncommitted changes')))
   }
   for (const commit of history.commits) {
     const captures = take((c) => sameCommit(commit.sha, commitOf(c)))
     rows.push(row('', commit.subject, `${commit.short} · ${ago(commit.date)}`, captures, commit,
-      commit.parent !== null && captureButton({ from: commit.parent, to: commit.sha }, `Capture ${commit.short} on its own`)))
+      commit.parent !== null && captureButton({ from: commit.parent, to: commit.sha }, `${commit.short} on its own`)))
   }
   if (history.base) {
     const base = history.base
@@ -1036,6 +1067,7 @@ function render(): void {
           el('div', { class: 'grow' },
             el('div', { class: 'title', title: listing.workspace.path }, listing.workspace.name),
             listing.workspace.branch && el('div', { class: 'muted small mono' }, listing.workspace.branch)),
+          button('Review', () => void requestScopeReview(), { class: 'ghost', title: `Review the work on this branch without drawing it. ${BILLED}`, ...disabledWhileBusy() }),
           button('Capture', () => void requestCapture(), { class: 'primary', title: 'Ask an agent to capture the work on this branch', ...disabledWhileBusy() }),
           button('Refresh', reload, { class: 'ghost', title: 'Read the captures and the history again' })
         )

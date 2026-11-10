@@ -11,6 +11,9 @@ code. Never edit code, commit or push.
 `working-tree`), `commits` (subjects and bodies: the intent) and `files` with line counts,
 generated files already removed. Do not run git to re-derive any of it.
 
+A capture can be review-only: nothing was drawn, and `capture.summary` says only what is in
+range. Review it the same way.
+
 If `capture.walkthrough` is set, read `<captureDir>/<walkthrough>` first: it says how the change
 is meant to work, step by step. Treat it as a claim to check, not as proof.
 

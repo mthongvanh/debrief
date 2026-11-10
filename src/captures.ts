@@ -1,7 +1,8 @@
 // Pure logic shared by the worker and its tests: the capture.json format, and which workspace
 // the panel is looking at. No Node or Orca calls here.
 
-export type CaptureKind = 'modification' | 'addition'
+/** A review capture holds no diagrams: only a code review of its range. */
+export type CaptureKind = 'modification' | 'addition' | 'review'
 export type ViewRole = 'before' | 'after' | 'flow'
 export type FileStatus = 'added' | 'modified' | 'deleted' | 'renamed'
 
@@ -43,7 +44,7 @@ export const IMAGE_TYPES: Record<string, string> = {
   '.webp': 'image/webp'
 }
 
-const KINDS: readonly CaptureKind[] = ['modification', 'addition']
+const KINDS: readonly CaptureKind[] = ['modification', 'addition', 'review']
 const ROLES: readonly ViewRole[] = ['before', 'after', 'flow']
 const STATUSES: readonly FileStatus[] = ['added', 'modified', 'deleted', 'renamed']
 
@@ -110,7 +111,9 @@ export function parseCapture(id: string, json: string): Capture {
   const kind = oneOf(data.kind, KINDS, 'kind')
   const createdAt = text(data.createdAt, 'createdAt') as string
   if (Number.isNaN(Date.parse(createdAt))) fail('"createdAt" must be an ISO 8601 date')
-  if (!Array.isArray(data.views) || data.views.length === 0) fail('"views" must list at least one view')
+  if (!Array.isArray(data.views)) fail('"views" must be a list')
+  if (kind === 'review' && data.views.length > 0) fail('a review capture has no views')
+  if (kind !== 'review' && data.views.length === 0) fail('"views" must list at least one view')
   const views = data.views.map(parseView)
   const has = (role: ViewRole) => views.some((view) => view.role === role)
   if (kind === 'modification' && !(has('before') && has('after'))) {

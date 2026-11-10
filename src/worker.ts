@@ -1,5 +1,6 @@
 // Reads captures from the focused workspace's disk for the panel, opens them in Orca, and queues
-// background runs of the debrief skill that draw new ones. This code never writes a capture.
+// background runs of the debrief skill that draw new ones. The only capture this code writes is a
+// review-only one: a capture.json with no diagrams, so a review can run before anything is drawn.
 import { watch, type FSWatcher } from 'node:fs'
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
@@ -14,7 +15,7 @@ import {
   type Capture,
   type CaptureView
 } from './captures.ts'
-import { buildScope, readHistory, runGit } from './git.ts'
+import { buildScope, readHistory, runGit, type BriefScope } from './git.ts'
 import { cancelJob, dismissJob, enqueue, ensureIgnored, idlePrompt, jobLog, jobsDir, listJobs, pruneRuns, skillDir, startNext, JOBS_DIR } from './jobs.ts'
 import type { CaptureListing, CaptureScope, ListedCapture, ViewRef, WorkspaceInfo } from './protocol.ts'
 import { capRows, diffWindow, sliceFile } from './cite.ts'
@@ -349,8 +350,9 @@ export default function activate(orca: OrcaWorkerApi): void {
         scopeFor: async (scope) => {
           const brief = await buildScope(workspace.path, scope)
           const { captures } = await listCaptures(root)
+          // A review-only capture holds no diagrams to check, so it is not handed to a capture run.
           const existing = captures
-            .filter((capture) => capture.base === brief.capture.base && capture.commit === brief.capture.commit)
+            .filter((capture) => capture.kind !== 'review' && capture.base === brief.capture.base && capture.commit === brief.capture.commit)
             .map((capture) => capture.id)
           return existing.length > 0 ? { ...brief, existing } : brief
         },
@@ -411,7 +413,8 @@ export default function activate(orca: OrcaWorkerApi): void {
     return commit.endsWith('+dirty') ? { from: base, uncommitted: true } : { from: base, to: commit }
   }
 
-  orca.panels.handle('captures.review', async ({ captureId }) => {
+  /** Queues a review of the capture's change, or returns the review already queued or running. */
+  async function queueReview(captureId: string): Promise<{ jobId: string }> {
     const { workspace, root } = await place()
     const { capture } = await locateCapture(orca, captureId)
     // Checks the range now, so a bad one fails here rather than in the background.
@@ -424,6 +427,51 @@ export default function activate(orca: OrcaWorkerApi): void {
     await advanceQueue()
     orca.panels.post('jobs.changed', { workspaceId: workspace.id })
     return { jobId }
+  }
+
+  orca.panels.handle('captures.review', ({ captureId }) => queueReview(captureId))
+
+  /** What a review-only capture is called: the commit's subject when it is one commit. */
+  function reviewTitle(scope: CaptureScope, brief: BriefScope, branch: string | null): string {
+    if (brief.after !== 'working-tree' && brief.commits.length === 1) return brief.commits[0].subject.slice(0, 120)
+    if (scope.uncommitted && scope.from === undefined) return 'Uncommitted changes'
+    if (brief.label === 'branch') return `Branch ${branch?.replace(/^refs\/heads\//, '') || 'work'}`
+    return `${brief.commits.length} commits, ${brief.label}`
+  }
+
+  /**
+   * Reviews a commit, a range, the uncommitted changes or the whole branch without drawing it
+   * first: the review lands in a review-only capture for that range, made once and reused.
+   */
+  orca.panels.handle('review.request', async (scope) => {
+    const { workspace, root } = await place()
+    const brief = await buildScope(workspace.path, scope ?? {})
+    if (brief.files.length === 0) throw codedError('invalid_params', 'There are no changed files to review')
+    await ensureIgnored(workspace.path, relative(workspace.path, root), (args) => runGit(workspace.path, args))
+    const { captures } = await listCaptures(root)
+    const same = captures.find((c) => c.kind === 'review' && c.base === brief.capture.base && c.commit === brief.capture.commit)
+    if (same) return { ...(await queueReview(same.id)), captureId: same.id }
+
+    const now = new Date()
+    const head = brief.capture.commit.slice(0, 7)
+    const slug = `${now.toISOString().slice(0, 10)}-review-${brief.after === 'working-tree' ? `${brief.label === 'branch' ? 'branch' : 'uncommitted'}-${head}` : `${brief.before.slice(0, 7)}-${head}`}`
+    let captureId = slug
+    for (let n = 2; await stat(resolve(root, captureId)).then(() => true, () => false); n++) captureId = `${slug}-${n}`
+    const files = brief.files.length
+    const capture = {
+      version: 1,
+      kind: 'review',
+      title: reviewTitle(scope ?? {}, brief, workspace.branch),
+      summary: `A code review of ${files} changed file${files === 1 ? '' : 's'}, with no diagrams drawn.`,
+      createdAt: now.toISOString(),
+      base: brief.capture.base,
+      commit: brief.capture.commit,
+      files: brief.files.map((file) => ({ path: file.path, status: file.status })),
+      views: []
+    }
+    await mkdir(resolve(root, captureId), { recursive: true })
+    await writeFile(resolve(root, captureId, 'capture.json'), JSON.stringify(capture, null, 2))
+    return { ...(await queueReview(captureId)), captureId }
   })
 
   orca.panels.handle('review.open', async ({ captureId }) => {

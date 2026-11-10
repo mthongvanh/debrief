@@ -298,6 +298,57 @@ test('a review without a rules file has no project rules', async () => {
   await worker.deactivate()
 })
 
+test('reviews one commit without drawing it, in a review-only capture it reuses', async () => {
+  const { path, one, two } = gitRepo()
+  const worker = await mountWorker(main, { host: host(path, [], { claudeCommand: fakeClaude(path), ghCommand: fakeGh(path, 'none') }) })
+
+  const first = await worker.request('review.request', { from: one, to: two })
+  const made = (await worker.request('captures.list')).captures.find((c) => c.id === first.captureId)
+  assert.equal(made?.kind, 'review')
+  assert.equal(made?.title, 'add c')
+  assert.equal(made?.base, one)
+  assert.equal(made?.commit, two)
+  assert.deepEqual(made?.views, [])
+  assert.deepEqual(made?.files, [{ path: 'c', status: 'added' }])
+  const jobs = await until(() => worker.request('jobs.list'), (list) => list.find((j) => j.kind === 'review')?.status === 'done')
+  assert.equal(jobs.find((j) => j.kind === 'review')?.captureId, first.captureId)
+  assert.equal((await worker.request('captures.get', { captureId: first.captureId })).review?.high, 1)
+
+  // The same range again runs again in the same capture.
+  const again = await worker.request('review.request', { from: one.slice(0, 9), to: two })
+  assert.equal(again.captureId, first.captureId)
+  assert.notEqual(again.jobId, first.jobId)
+  await until(() => worker.request('jobs.list'), (list) => list.filter((j) => j.kind === 'review' && j.status === 'done').length === 2)
+
+  // A capture run of that range is not told to fix the review-only capture.
+  await worker.request('captures.request', { from: one, to: two })
+  await until(() => worker.request('jobs.list'), (list) => list.some((j) => j.kind === 'capture' && j.status === 'done'))
+  const runs = readFileSync(join(path, 'args.log'), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  const brief = JSON.parse(readFileSync(join(path, runs.at(-1)[1].split('brief=')[1].trim()), 'utf8'))
+  assert.equal(brief.scopes[0].existing, undefined)
+  await worker.deactivate()
+})
+
+test('reviews the uncommitted changes, and refuses a range with nothing in it', async () => {
+  const { path, two } = gitRepo()
+  const worker = await mountWorker(main, { host: host(path, [], { claudeCommand: fakeClaude(path), ghCommand: fakeGh(path, 'none') }) })
+  const { captureId } = await worker.request('review.request', { uncommitted: true })
+  const made = (await worker.request('captures.list')).captures.find((c) => c.id === captureId)
+  assert.equal(made?.title, 'Uncommitted changes')
+  assert.equal(made?.commit, `${two}+dirty`)
+  assert.ok(captureId.includes('-review-uncommitted-'))
+  await until(() => worker.request('jobs.list'), (list) => list.find((j) => j.kind === 'review')?.status === 'done')
+  const args = JSON.parse(readFileSync(join(path, 'args.log'), 'utf8').trim().split('\n')[0])
+  const brief = JSON.parse(readFileSync(join(path, args[1].split('brief=')[1].trim()), 'utf8'))
+  assert.equal(brief.scope.after, 'working-tree')
+  assert.ok(brief.scope.files.some((f: { path: string }) => f.path === 'd'))
+
+  // Nothing left to review once the working tree is clean (the fake CLIs are untracked files too).
+  for (const name of ['d', 'fake-claude.mjs', 'fake-gh-none.mjs', 'args.log']) rmSync(join(path, name), { force: true })
+  await assert.rejects(worker.request('review.request', { uncommitted: true }), /no changed files/)
+  await worker.deactivate()
+})
+
 /** A stand-in for `gh`: one open pull request, its description and one inline comment. */
 function fakeGh(dir: string, mode: 'pr' | 'none' | 'broken'): string {
   const script = join(dir, `fake-gh-${mode}.mjs`)

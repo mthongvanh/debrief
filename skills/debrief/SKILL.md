@@ -49,7 +49,8 @@ and `>` redirects are refused there.
 Then, either way: read old code with `git show <before>:<path>` and new code with
 `git show <after>:<path>` (or the file itself when after is the working tree). Read only the files
 the change is about; the line counts say where the weight is. If a capture in the captures folder
-already has the same `base` and `commit`, redraw it in its folder.
+already has the same `base` and `commit`, redraw it in its folder, unless its `kind` is `review`:
+the plugin made that one to hold a review and it has no diagrams, so draw a new capture.
 
 ## 2. Split and classify
 

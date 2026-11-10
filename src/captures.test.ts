@@ -32,6 +32,12 @@ test('an addition needs a flow', () => {
   assert.equal(addition.kind, 'addition')
 })
 
+test('a review-only capture has no views, and only it may have none', () => {
+  assert.equal(parse({ ...valid, kind: 'review', views: [] }).views.length, 0)
+  assert.throws(() => parse({ ...valid, kind: 'review' }), /review capture has no views/)
+  assert.throws(() => parse({ ...valid, views: [] }), /at least one view/)
+})
+
 test('refuses image paths that leave the capture folder', () => {
   for (const image of ['../x.svg', '/etc/x.svg', 'a\\b.svg']) {
     const views = [{ ...valid.views[0], image }, valid.views[1]]

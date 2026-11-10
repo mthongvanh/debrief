@@ -26,6 +26,12 @@ panel:
   diff. The run's instructions are `skills/debrief/REVIEW.md`; it reads the walkthrough,
   if there is one, as a claim to check. It does not build or run tests.
 
+  A review doesn't need a capture first. Review, next to Capture at the top of the panel, on
+  each timeline row and in Capture between two commits, reviews that scope without drawing it.
+  The review lands in a review-only capture (kind `review`, no diagrams) on the same timeline
+  row; reviewing the same range again reuses it. A later capture of that range draws a capture
+  of its own.
+
   A repository can give its reviews rules of its own in `.debrief/review.md`, committed with
   the code: what to look for, paths to skip, what counts as high severity. A review reads the
   file as committed at the commit before the change, so a branch can't loosen the rules of its
@@ -40,15 +46,15 @@ panel:
   approves or edits one.
 - **Capture:** the Capture button at the top of the panel, or **Debrief: Capture completed
   work** in the command palette, draws the whole branch: from where it left the trunk to the
-  working tree, uncommitted changes included.
+  working tree, uncommitted changes included. Review next to it reviews the same work without drawing it.
 - **Timeline:** the branch's commits, newest first (up to 60), down to where it left the trunk,
   with each capture on the commit it was drawn at. The trunk is the first of `origin/master`,
   `origin/main`, `master` and `main` that the branch has left; on the trunk itself the timeline
-  shows recent history. Uncommitted changes sit on top, with their own Capture button. Each
-  commit has a Capture button that draws just that commit. **All captures** lists them without
+  shows recent history. Uncommitted changes sit on top, with their own Capture and Review
+  buttons. Each commit has Capture and Review buttons for just that commit. **All captures** lists them without
   the timeline.
 - **Between two commits:** open Capture between two commits, pick From and To and press Capture
-  range. Before is drawn from From, after from To, never from the working tree. The capture
+  range (or Review range). Before is drawn from From, after from To, never from the working tree. The capture
   lands on To's row, with a `from..to` chip.
 - **Runs:** each queued or running run shows in the panel with what it is doing now, and when
   it ends, its cost, tokens, turns and time. Log shows its steps; Cancel stops it; Dismiss
@@ -97,7 +103,8 @@ panel ──Capture──▶ worker ──git──▶ brief.json (range, files,
   `REVIEW.md` for reviews, `references/capture-format.md` for the file formats, the D2
   templates, the house D2 style (a copy of the `d2` skill's `style.d2`) and `scripts/look.sh`,
   which screenshots SVGs with an installed Chrome.
-- `src/worker.ts` answers the panel and the walkthrough editor. `src/panel.ts` is the sidebar
+- `src/worker.ts` answers the panel and the walkthrough editor. The only capture it writes is a
+  review-only one, so a review can run before anything is drawn. `src/panel.ts` is the sidebar
   (HTML, Orca's colours). `src/editor.ts` is the custom editor for `*.debrief.json` files: a
   walkthrough or a review. It puts each SVG inline (scripts and event attributes removed) so a
   step can dim every D2 box it does not name.
