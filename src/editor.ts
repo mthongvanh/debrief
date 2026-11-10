@@ -4,7 +4,7 @@
 import { CaptureError } from './captures.ts'
 import type { Cite, CiteRow } from './cite.ts'
 import type { Job, ListedCapture } from './protocol.ts'
-import { isReviewText, parseReview, type Finding, type Review } from './review.ts'
+import { isReviewText, parseReview, reviewMarkdown, type Finding, type Review } from './review.ts'
 import { parseWalkthrough, d2IdOf, litIds, type Decision, type Figure, type Walkthrough, type WalkthroughStep } from './walkthrough.ts'
 import { icon, type IconName } from './icons.ts'
 import { LEGEND_CSS, LEGEND_LABEL, removeLegend, trimToContent, type LegendKey } from './legend.ts'
@@ -219,6 +219,8 @@ ul.points li::before { content: ''; flex-shrink: 0; width: 5px; height: 5px; mar
 .decision .words { display: flex; flex-direction: column; gap: 12px; }
 .decision .head { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.markdown { display: block; width: 100%; min-height: 160px; margin-top: 10px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--orca-foreground); background: var(--orca-card); border: 1px solid var(--orca-border); border-radius: var(--orca-radius, 6px); padding: 8px; }
 .counts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .sev { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; font-weight: 600; }
 .sev.high { color: var(--debrief-deleted-fg); background: var(--debrief-deleted-bg); border-color: transparent; }
@@ -304,7 +306,9 @@ const state = {
   dark: false,
   tab: 'walkthrough' as Tab,
   /** Narrow layout: the step diagram shows in full instead of as a strip. */
-  diagramOpen: false
+  diagramOpen: false,
+  /** The review as Markdown, shown to copy by hand when the clipboard refused it. */
+  markdown: null as string | null
 }
 type CiteAnswer = { rows: CiteRow[]; truncated: boolean; from: string }
 type Picture = { node: Node; keys: LegendKey[] }
@@ -686,6 +690,39 @@ function startReview(): void {
   ).then(render)
 }
 
+/** Puts text on the clipboard: the async API, else a selected textarea and the copy command. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    const area = document.createElement('textarea')
+    area.value = text
+    area.setAttribute('readonly', '')
+    area.style.cssText = 'position: fixed; opacity: 0; top: 0; left: 0'
+    document.body.append(area)
+    area.select()
+    try {
+      return document.execCommand('copy')
+    } catch {
+      return false
+    } finally {
+      area.remove()
+    }
+  }
+}
+
+/** Copies the open review as Markdown, or shows it to copy by hand when the clipboard refuses. */
+async function copyReview(): Promise<void> {
+  const review = state.review
+  if (!review) return
+  const markdown = reviewMarkdown(review, state.capture ?? { title: review.capture })
+  const copied = await copyText(markdown)
+  state.markdown = copied ? null : markdown
+  state.status = copied ? 'Copied the review as Markdown.' : 'The clipboard is not available here: select the text below and copy it.'
+  render()
+}
+
 /** Review code, open the review, or the run's progress. */
 function reviewActions(): HTMLElement | false {
   const capture = state.capture
@@ -702,8 +739,21 @@ function reviewActions(): HTMLElement | false {
       title: 'A background Claude run reviews this change for bugs. Billed to your Claude login, capped by the cost setting.',
       ...(job ? { disabled: '' } : {})
     }),
+    state.review && button(['Copy as Markdown'], () => void copyReview(), { title: 'Copies the summary and findings, to paste into a pull request comment' }),
     job?.activity && el('span', { class: 'muted small' }, job.activity),
     state.status && !job && el('span', { class: 'muted small' }, state.status))
+}
+
+/** The review's Markdown in a box, selected, after the clipboard refused it. */
+function markdownBox(): HTMLElement | false {
+  if (!state.markdown) return false
+  const area = document.createElement('textarea')
+  area.className = 'markdown'
+  area.value = state.markdown
+  area.setAttribute('readonly', '')
+  area.setAttribute('aria-label', 'The review as Markdown')
+  requestAnimationFrame(() => area.select())
+  return area
 }
 
 function findingCard(f: Finding): HTMLElement {
@@ -734,7 +784,8 @@ function reviewView(review: Review): Child[] {
         ` · ${review.basis}`),
       review.findings.length > 0 && el('div', { class: 'counts' },
         ...(['high', 'medium', 'low'] as const).filter((s) => count(s) > 0).map((s) => el('span', { class: `sev ${s}` }, `${count(s)} ${s}`))),
-      reviewActions()),
+      reviewActions(),
+      markdownBox()),
     el('section', { id: 'findings' },
       el('h2', {}, 'Findings'),
       el('p', { class: 'lede small' }, 'Confirmed: traced end to end in the code. Plausible: one step is assumed. Nothing was run.'),

@@ -1,5 +1,5 @@
 import { assert, test } from 'orca/testing'
-import { isReviewText, parseReview, summarize } from './review.ts'
+import { isReviewText, parseReview, reviewMarkdown, summarize } from './review.ts'
 
 const finding = (severity: string, title = 'Turn finishes twice') => ({
   severity, confidence: 'confirmed', title,
@@ -42,4 +42,37 @@ test('names the bad field and keeps findings short', () => {
   assert.throws(() => parse({ ...valid, findings: [{ ...finding('high'), failure: 'x'.repeat(221) }] }), /keep it to 220/)
   assert.throws(() => parse({ ...valid, findings: Array.from({ length: 11 }, () => finding('low')) }), /keep it to 10/)
   assert.throws(() => parse({ ...valid, createdAt: 'today' }), /createdAt/)
+})
+
+test('writes a review as Markdown to paste into a pull request', () => {
+  const review = parse({
+    ...valid,
+    findings: [
+      { ...finding('high', 'Big'), fix: 'Return before `finally` runs.' },
+      { ...finding('low', 'Gone'), code: { path: 'lib/b.dart', lines: [3, 3], show: 'before' } }
+    ],
+    checked: ['Retry naming', 'Callers of `play`']
+  })
+  const base = 'a'.repeat(40)
+  const markdown = reviewMarkdown(review, { title: 'Turns finish once', base, commit: `${'b'.repeat(40)}+dirty` })
+  assert.equal(markdown, [
+    '### Review: Turns finish once',
+    '',
+    'One bug to fix.',
+    '',
+    '**1 high · 1 low** · `aaaaaaa..bbbbbbb + uncommitted` · code reading of a..b; tests not run',
+    '',
+    '1. **Big** (high, confirmed) at `lib/a.dart` lines 10–14',
+    '   - What breaks: A turn whose audio plays calls `finish` again in `finally`.',
+    '   - Why: The `finally` block always runs.',
+    '   - Fix: Return before `finally` runs.',
+    '',
+    '2. **Gone** (low, confirmed) at `lib/b.dart` line 3 (before the change)',
+    '   - What breaks: A turn whose audio plays calls `finish` again in `finally`.',
+    '   - Why: The `finally` block always runs.',
+    '',
+    'Also checked, nothing wrong: Retry naming; Callers of `play`.',
+    ''
+  ].join('\n'))
+  assert.ok(reviewMarkdown(parse({ ...valid, findings: [] }), { title: 'T' }).includes('**No findings** · code reading'))
 })

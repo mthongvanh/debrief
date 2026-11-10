@@ -144,6 +144,45 @@ export function parseReview(json: string): Review {
   return review
 }
 
+/** Where a finding's cited lines are, for text: "`lib/a.dart` lines 10–14", "(before)" for deleted code. */
+function citeText(code: Cite): string {
+  const [from, to] = code.lines
+  return `\`${code.path}\` ${from === to ? `line ${from}` : `lines ${from}–${to}`}${code.show === 'before' ? ' (before the change)' : ''}`
+}
+
+/**
+ * The review as Markdown, to paste into a pull request comment or a chat. The text fields already
+ * use backticks for code names, so they go in as they are.
+ */
+export function reviewMarkdown(review: Review, capture: { title: string; base?: string; commit?: string }): string {
+  const count = (severity: Severity) => review.findings.filter((f) => f.severity === severity).length
+  const tally = SEVERITIES.filter((s) => count(s) > 0).map((s) => `${count(s)} ${s}`).join(' · ')
+  const base = (capture.base ?? '').slice(0, 7)
+  const commit = (capture.commit ?? '').replace(/\+dirty$/, ' + uncommitted').replace(/^([0-9a-f]{7})[0-9a-f]*/i, '$1')
+  const lines = [
+    `### Review: ${capture.title}`,
+    '',
+    review.summary,
+    '',
+    [
+      `**${tally || 'No findings'}**`,
+      base && commit ? `\`${base}..${commit}\`` : '',
+      review.basis
+    ].filter(Boolean).join(' · ')
+  ]
+  review.findings.forEach((f, i) => {
+    lines.push(
+      '',
+      `${i + 1}. **${f.title}** (${f.severity}, ${f.confidence}) at ${citeText(f.code)}`,
+      `   - What breaks: ${f.failure}`,
+      `   - Why: ${f.why}`
+    )
+    if (f.fix) lines.push(`   - Fix: ${f.fix}`)
+  })
+  if (review.checked.length > 0) lines.push('', `Also checked, nothing wrong: ${review.checked.join('; ')}.`)
+  return `${lines.join('\n')}\n`
+}
+
 export function summarize(review: Review): ReviewSummary {
   const count = (severity: Severity) => review.findings.filter((f) => f.severity === severity).length
   return {
