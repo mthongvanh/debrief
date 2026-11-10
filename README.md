@@ -150,9 +150,9 @@ are added). Optional: the GitHub CLI `gh`, signed in, for pull requests; Chrome 
 which runs use to look at what they drew (without it, runs say the diagrams were not looked
 at).
 
-1. Install from the team's Git repository, or from a folder holding this plugin:
+1. Install from GitHub, or from a folder holding this plugin:
    ```sh
-   orca plugin install git@github.com:<owner>/debrief.git --json
+   orca plugin install https://github.com/mthongvanh/debrief.git --json
    orca plugin install /path/to/debrief --json
    ```
    Orca stops with `approval_required` and lists the access the plugin asks for (below).
@@ -218,3 +218,8 @@ orca plugin dev watch . --json
 ```
 
 Tests sit beside the code as `src/*.test.ts`.
+
+## License
+
+MIT; see [LICENSE](LICENSE). `skills/debrief/templates/_style.d2` is a copy of the house D2
+style and keeps its own MIT notice, in `skills/debrief/templates/STYLE-LICENSE`.
