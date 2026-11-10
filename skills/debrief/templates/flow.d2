@@ -1,0 +1,37 @@
+...@_style
+...@_classes
+
+# FLOW for new code: the existing entry point, the edit that calls the new path, the new path
+# and its outcomes, the failure branch included. Example boxes from an online shop.
+direction: down
+
+ui: Checkout page {class: unchanged}
+orders: Place order {class: changed}
+check: Card valid? {shape: diamond; class: added}
+redeem: Redeem balance {class: added}
+reject: Show card error {class: added}
+pay: Card provider {class: external}
+
+ui -> orders: place order
+orders -> check: has gift card {class: added-line}
+check -> redeem: yes
+check -> reject: no
+redeem -> pay: charge the rest
+
+# Key, written last: one row per class this diagram uses, grid-rows = row count.
+legend: "" {
+  grid-rows: 4
+  grid-columns: 2
+  grid-gap: 10
+  style: {fill: "#f3f1ea"; stroke-width: 1}
+  *.style.font-size: 16
+  *.style.bold: false
+  unchanged: "" {class: [unchanged; key]}
+  unchanged-label: Unchanged {shape: text}
+  changed: "" {class: [changed; key]}
+  changed-label: Changed by this work {shape: text}
+  added: "" {class: [added; key]}
+  added-label: New in this work {shape: text}
+  external: "" {class: [external; key]}
+  external-label: Outside this codebase {shape: text}
+}

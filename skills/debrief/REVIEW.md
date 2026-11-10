@@ -1,0 +1,97 @@
+# Review a captured change
+
+Review the code change one capture drew, for bugs a reviewer would block a merge on. Write the
+findings to one file, `review.debrief.json`, which the Orca walkthrough editor shows beside the cited
+code. Never edit code, commit or push.
+
+## 1. Read the brief
+
+`brief=<path>` is JSON with `capture` (id, title, summary, `base`, `commit`), `captureDir`,
+`reviewFile` (write here, nothing else), and `scope`: `before` and `after` shas (`after` may be
+`working-tree`), `commits` (subjects and bodies: the intent) and `files` with line counts,
+generated files already removed. Do not run git to re-derive any of it.
+
+If `capture.walkthrough` is set, read `<captureDir>/<walkthrough>` first: it says how the change
+is meant to work, step by step. Treat it as a claim to check, not as proof.
+
+If the brief has `pr`, the change is under review on GitHub. Its `body` states what the pull
+request claims (what it fixes, what it does not change, how it was tested): check each claim
+against the code, and a false claim is a finding. Its `comments` are what reviewers already said:
+do not report a defect they already raised, and do not argue with a resolved one. Copy
+`pr.number` and `pr.url` into the review. `prNote` says why there is no pull request context.
+
+Allowed shell commands: read-only `git` (`show`, `diff`, `log`, `grep`, `blame`, `cat-file`,
+`rev-parse`, `ls-files`), `ls` and `wc`. Read files with Read, search with Grep. `.env` files are
+off limits. Do not build, test or run anything.
+
+## 2. Find
+
+Read the diff: `git diff <before> <after> -- <path>` (no `<after>` for the working tree). Start
+with the files carrying the most changed lines. For each change, read enough of the code around
+it, and grep the callers of anything whose signature or behaviour changed.
+
+Look for what makes the code do the wrong thing:
+
+- logic: wrong condition, off by one, inverted check, a case not handled, wrong order of steps
+- async: a missing `await`, a future never awaited or awaited twice, a race between two paths,
+  work after dispose or close, a stream subscription never cancelled
+- state: a value read before it is set, set twice, or left stale on an early return or a throw
+- errors: a caught error that hides a failure, a `finally` that undoes the success path, a throw
+  the callers do not expect
+- contracts: callers that relied on the old behaviour, a "refactor" that changes behaviour
+- tests that no longer test what their name says
+
+Not findings: style, naming, formatting, missing comments, "consider", performance without a
+measured or obvious cost, and anything the change did not touch.
+
+## 3. Verify each candidate
+
+For each candidate, trace the path from an input a user or caller can produce to the wrong
+outcome. Name the input and the outcome in `failure` ("A turn that times out before playback
+calls `finish` twice, so ..."). Drop the candidate if you cannot name both.
+
+- `confirmed`: every step of the path is in code you read.
+- `plausible`: the path depends on one step you could not read (a platform call, a package),
+  and that step is likely. Say which in `why`.
+
+Severity: `high` loses data, crashes, corrupts state or breaks the main flow; `medium` gives a
+wrong result in a real but narrower case; `low` is a real defect with little effect. At most 10
+findings, the most severe first. Zero findings is a fine result when nothing survived.
+
+## 4. Write the review, then report
+
+Write `reviewFile` once, with Write:
+
+```json
+{
+  "version": 1,
+  "kind": "review",
+  "capture": "<capture.id>",
+  "createdAt": "<ISO 8601 now>",
+  "summary": "One sentence: the verdict, such as two bugs to fix before merging.",
+  "basis": "code reading of <before>..<after>; 9 files; tests not run",
+  "findings": [{
+    "severity": "medium",
+    "confidence": "confirmed",
+    "title": "Short claim, the defect alone",
+    "failure": "Concrete input or state, then the wrong outcome.",
+    "why": "What in the code makes it happen.",
+    "fix": "The smallest change that removes it.",
+    "code": { "path": "lib/x.dart", "lines": [88, 96] }
+  }],
+  "checked": ["Areas looked at where nothing was wrong, a few words each"],
+  "pr": { "number": 2480, "url": "https://github.com/..." }
+}
+```
+
+- `code` cites the lines where the defect is, in the after file (`"show": "diff"` is the
+  default, so the removed lines show too). Use `"show": "before"` only for code the change
+  deleted. Get line numbers with `git grep -n <text> <after> -- <path>`; cite 3 to 15 lines, at
+  most 40. Never paste code into the text.
+- Keep text short: title 90 characters, failure and why 220, fix 160, summary and basis 200.
+  `backticks` mark code names. The editor refuses longer text and names the field.
+- `checked`: up to 6 short entries, so a short list of findings still shows its coverage. With
+  a pull request, one entry says how its description's claims held up.
+- `pr`: only when the brief has one; leave it out otherwise.
+
+Then reply with one line: the number of findings by severity, and the file written.

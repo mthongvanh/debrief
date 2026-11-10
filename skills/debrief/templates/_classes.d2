@@ -1,0 +1,18 @@
+# What the work did to each box and line. Imported with ...@_classes after ...@_style.
+classes: {
+  unchanged: {style.fill: "#ffffff"}
+  changed: {style.fill: "#f8c848"}
+  added: {style.fill: "#8cc63f"}
+  removed: {style: {fill: "#d9dfe5"; font-color: "#66778a"; italic: true}}
+  external: {style: {stroke-dash: 5; fill: "#fbfaf6"}}
+  # Containers are groups, not changes: without this they draw yellow, the "changed" colour.
+  area: {style: {fill: "#f3f1ea"; stroke-width: 2}}
+
+  # Lines: only when the line itself is the change (new label, new target, new call).
+  changed-line: {style: {stroke: "#e0a100"; stroke-width: 5; font-color: "#9a6b00"}}
+  added-line: {style: {stroke: "#5f9e1c"; stroke-width: 5; font-color: "#3f6e10"}}
+  removed-line: {style: {stroke: "#9aa5b1"; stroke-dash: 4; font-color: "#66778a"}}
+
+  # Legend swatches; wider than tall so a dashed border still reads as dashed.
+  key: {width: 36; height: 22}
+}

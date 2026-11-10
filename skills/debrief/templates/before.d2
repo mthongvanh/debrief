@@ -1,0 +1,35 @@
+...@_style
+...@_classes
+
+# BEFORE: the old code. Example boxes from an online shop; replace them all.
+# after.d2 is a copy of this file with only the work's edits.
+direction: down
+
+ui: Checkout page {class: unchanged}
+orders: Place order {class: changed}
+manual: Manual card check {class: removed}
+stock: Reserve stock {class: unchanged}
+pay: Card provider {class: external}
+
+ui -> orders: place order
+orders -> manual: flags big orders {class: removed-line}
+orders -> stock: reserve items
+orders -> pay: charge full total {class: changed-line}
+
+# Key, written last: one row per class this diagram uses, grid-rows = row count.
+legend: "" {
+  grid-rows: 4
+  grid-columns: 2
+  grid-gap: 10
+  style: {fill: "#f3f1ea"; stroke-width: 1}
+  *.style.font-size: 16
+  *.style.bold: false
+  unchanged: "" {class: [unchanged; key]}
+  unchanged-label: Unchanged {shape: text}
+  changed: "" {class: [changed; key]}
+  changed-label: Changed by this work {shape: text}
+  removed: "" {class: [removed; key]}
+  removed-label: Removed by this work {shape: text}
+  external: "" {class: [external; key]}
+  external-label: Outside this codebase {shape: text}
+}

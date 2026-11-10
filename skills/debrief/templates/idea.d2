@@ -1,0 +1,30 @@
+...@_style
+...@_classes
+
+# IDEA figure for a walkthrough: chosen against not chosen, drawn side by side on the same boxes.
+# No legend: the caption says what to look at. Example boxes from an online shop.
+grid-columns: 2
+grid-gap: 60
+
+chosen: "Chosen: redeem first" {
+  class: area
+  direction: down
+  order: "Place order" {class: unchanged}
+  redeem: "Redeem gift card" {class: added}
+  pay: "Card provider" {class: external}
+  order -> redeem: "has gift card" {class: added-line}
+  redeem -> pay: "charge the rest"
+}
+
+other: "Not chosen: refund after" {
+  class: area
+  direction: down
+  order: "Place order" {class: unchanged}
+  pay: "Card provider" {class: external}
+  refund: "Refund gift card part" {class: changed}
+  order -> pay: "charge the total"
+  pay -> refund: "then refund" {class: changed-line}
+}
+
+# For the shape of a whole flow, a snake keeps it readable at panel width:
+# grid-rows: 2; grid-columns: 3; horizontal-gap: 270; declare row 2 right to left.

@@ -1,0 +1,34 @@
+...@_style
+...@_classes
+
+# AFTER: same ids, direction and declaration order as before.d2; only the work's edits differ.
+direction: down
+
+ui: Checkout page {class: unchanged}
+orders: Place order {class: changed}
+giftcards: Redeem gift card {class: added}
+stock: Reserve stock {class: unchanged}
+pay: Card provider {class: external}
+
+ui -> orders: place order
+orders -> giftcards: redeem card {class: added-line}
+orders -> stock: reserve items
+orders -> pay: charge the rest {class: changed-line}
+
+# Key, written last: one row per class this diagram uses, grid-rows = row count.
+legend: "" {
+  grid-rows: 4
+  grid-columns: 2
+  grid-gap: 10
+  style: {fill: "#f3f1ea"; stroke-width: 1}
+  *.style.font-size: 16
+  *.style.bold: false
+  unchanged: "" {class: [unchanged; key]}
+  unchanged-label: Unchanged {shape: text}
+  changed: "" {class: [changed; key]}
+  changed-label: Changed by this work {shape: text}
+  added: "" {class: [added; key]}
+  added-label: New in this work {shape: text}
+  external: "" {class: [external; key]}
+  external-label: Outside this codebase {shape: text}
+}

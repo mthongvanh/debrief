@@ -1,0 +1,133 @@
+{
+  "manifestVersion": 2,
+  "id": "debrief",
+  "name": "Debrief",
+  "version": "0.1.0",
+  "description": "Shows what an agent finished in a workspace as D2 diagrams: before and after for changed behaviour, a flow for new code, and a guided walkthrough of the code and the design decisions behind it.",
+  "license": "MIT",
+  "engines": {
+    "orca": ">=1.4.248"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.ts",
+  "contributes": {
+    "panels": [
+      {
+        "id": "debrief",
+        "title": "Debrief",
+        "icon": "book",
+        "entry": "src/panel.ts",
+        "ui": "html"
+      }
+    ],
+    "commands": [
+      {
+        "id": "capture",
+        "title": "Debrief: Capture completed work",
+        "when": "workspace"
+      }
+    ],
+    "settings": [
+      {
+        "key": "diagramTheme",
+        "title": "Diagram colours",
+        "description": "Auto follows Orca's theme. Dark redraws the light diagrams with soft dark colours in the panel; the files are unchanged.",
+        "type": "string",
+        "default": "auto",
+        "enum": [
+          "auto",
+          "light",
+          "dark"
+        ],
+        "enumLabels": [
+          "Follow Orca",
+          "Light",
+          "Dark"
+        ]
+      },
+      {
+        "key": "capturesDir",
+        "title": "Captures folder",
+        "description": "Where captures live, relative to the workspace root. Keep it out of Git.",
+        "type": "string",
+        "default": ".context/debrief",
+        "maxLength": 200
+      },
+      {
+        "key": "captureTarget",
+        "title": "Who draws a capture",
+        "description": "A background run is a one-shot headless Claude: no MCP servers, read-only git, a cost cap, and it stops when done. An idle agent already knows the work but carries the drawing in its own conversation.",
+        "type": "string",
+        "default": "background",
+        "enum": [
+          "background",
+          "idle-agent"
+        ],
+        "enumLabels": [
+          "A background run",
+          "An idle Claude in the workspace, else a background run"
+        ]
+      },
+      {
+        "key": "model",
+        "title": "Model for background runs",
+        "type": "string",
+        "default": "sonnet",
+        "maxLength": 60
+      },
+      {
+        "key": "maxBudgetUsd",
+        "title": "Cost cap per background run (USD)",
+        "type": "number",
+        "default": 1,
+        "minimum": 0.1,
+        "maximum": 20
+      },
+      {
+        "key": "claudeCommand",
+        "title": "Claude command",
+        "description": "Run with the workspace as its folder; ~/.local/bin and Homebrew are on its PATH.",
+        "type": "string",
+        "default": "claude",
+        "maxLength": 300
+      },
+      {
+        "key": "ghCommand",
+        "title": "GitHub CLI command",
+        "description": "Finds the open pull request for a workspace's branch, so a review can read its description and comments. Read-only; uses your own gh login.",
+        "type": "string",
+        "default": "gh",
+        "maxLength": 300
+      }
+    ],
+    "customEditors": [
+      {
+        "id": "walkthrough",
+        "title": "Debrief walkthrough",
+        "extensions": [
+          ".debrief.json"
+        ],
+        "entry": "src/editor.ts",
+        "frame": "isolated"
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "workspace:read"
+    },
+    {
+      "kind": "workspace:write"
+    },
+    {
+      "kind": "agent:read"
+    },
+    {
+      "kind": "terminal:send"
+    },
+    {
+      "kind": "settings:own"
+    }
+  ]
+}
