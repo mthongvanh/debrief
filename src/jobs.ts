@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import type { BriefScope } from './git.ts'
 import type { PrContext } from './pr.ts'
 import type { CaptureScope, Job, JobRun } from './protocol.ts'
+import type { ProjectRules } from './rules.ts'
 
 export const JOBS_DIR = '.jobs'
 const QUEUED = /^q-([A-Za-z0-9-]+)\.json$/
@@ -43,6 +44,8 @@ export type ReviewTarget = {
   pr?: PrContext
   /** Why there is no pull request context, when looking it up failed. */
   prNote?: string
+  /** The repository's own review instructions, read at the commit before the change. */
+  projectRules?: ProjectRules
 }
 type ReviewBrief = ReviewTarget & {
   id: string

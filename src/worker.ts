@@ -21,6 +21,7 @@ import { capRows, diffWindow, sliceFile } from './cite.ts'
 import { parseCite, parseWalkthrough, repoPath } from './walkthrough.ts'
 import { REVIEW_FILE, parseReview, summarize } from './review.ts'
 import { findOpenPr, readPrContext, type PrContext as PrContextType, type PullRequest } from './pr.ts'
+import { REVIEW_RULES_FILE, readProjectRules } from './rules.ts'
 
 /** Answers are capped at 1 MiB and base64 grows a file by a third. */
 const MAX_IMAGE_BYTES = 700 * 1024
@@ -356,8 +357,12 @@ export default function activate(orca: OrcaWorkerApi): void {
         reviewFor: async (captureId) => {
           const { capture, folder } = await locateCapture(orca, captureId)
           const pr = await prFor(workspace, capture, settings.ghCommand)
+          const scope = await buildScope(workspace.path, reviewScope(capture))
+          // Read before the change, so a change cannot rewrite the rules of its own review.
+          const projectRules = await readProjectRules(workspace.path, REVIEW_RULES_FILE, scope.before)
           return {
             ...pr,
+            ...(projectRules ? { projectRules } : {}),
             capture: {
               id: capture.id, title: capture.title, summary: capture.summary,
               base: capture.base ?? '', commit: capture.commit ?? '',
@@ -365,7 +370,7 @@ export default function activate(orca: OrcaWorkerApi): void {
             },
             // locateCapture resolves symlinks, so the workspace must be resolved too.
             captureDir: relative(await realpath(workspace.path), folder).split(sep).join('/'),
-            scope: await buildScope(workspace.path, reviewScope(capture))
+            scope
           }
         }
       })

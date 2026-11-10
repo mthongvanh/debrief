@@ -26,6 +26,13 @@ panel:
   diff. The run's instructions are `skills/debrief/REVIEW.md`; it reads the walkthrough,
   if there is one, as a claim to check. It does not build or run tests.
 
+  A repository can give its reviews rules of its own in `.debrief/review.md`, committed with
+  the code: what to look for, paths to skip, what counts as high severity. A review reads the
+  file as committed at the commit before the change, so a branch can't loosen the rules of its
+  own review, and takes the first 4,000 characters. The rules can't change where the review
+  writes, its format or the commands it may run. When they applied, the review's basis ends
+  with `with .debrief/review.md`.
+
   When the workspace's branch has an open pull request (found with your own `gh` login), the
   capture shows `PR #N`, and a review of a commit on that branch also reads the pull request:
   its description, whose claims it checks against the code, and the comments reviewers already
@@ -74,6 +81,8 @@ panel ──Capture──▶ worker ──git──▶ brief.json (range, files,
   counts (generated files and lockfiles dropped, at most 300 files), commit subjects and bodies,
   and the `base`/`commit` values the capture must carry. The agent reads this instead of
   exploring. It also reads the timeline and checks that a range's From is an ancestor of its To.
+- `src/rules.ts` reads a repository's own run rules (`.debrief/review.md`) from git at a commit,
+  never from the working tree, and cuts them to 4,000 characters.
 - `src/pr.ts` finds the branch's open pull request with `gh` and reads its description and
   comments for a review run. It never writes to GitHub.
 - `src/jobs.ts` keeps the queue and runs as files in `.context/debrief/.jobs/`, so a run
@@ -134,7 +143,7 @@ ignores it.
 
 - **Sent to Anthropic, under your own Claude login:** each background run (capture or review)
   sends the diff and the code it reads to Claude (a review also sends the pull request's
-  description and comments, clipped), like any Claude Code session, and is billed to you
+  description and comments, clipped, and the repository's `.debrief/review.md`), like any Claude Code session, and is billed to you
   (capped by the cost setting, $1 by default). The run cannot read `.env` files (deny rules,
   tested) and has no MCP servers, CLAUDE.md or memory.
 - **Stays in the worktree, under `.context/debrief/`** (kept out of Git through
