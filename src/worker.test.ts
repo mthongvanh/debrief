@@ -8,6 +8,31 @@ import { buildScope, commitBody } from './git'
 import * as main from './worker'
 
 
+/**
+ * Fails where Orca would refuse an answer as "a non-JSON value": undefined, NaN, Infinity or a
+ * class instance anywhere inside it. JSON.stringify drops or rewrites these; Orca does not.
+ */
+function assertJson(value: unknown, at = 'answer'): void {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return
+  if (typeof value === 'number') return assert.ok(Number.isFinite(value), `${at} is ${value}`)
+  if (Array.isArray(value)) return value.forEach((item, index) => assertJson(item, `${at}[${index}]`))
+  const proto = typeof value === 'object' ? Object.getPrototypeOf(value) : undefined
+  assert.ok(proto === Object.prototype || proto === null, `${at} is ${value === undefined ? 'undefined' : 'not a plain JSON value'}`)
+  for (const [key, item] of Object.entries(value as object)) assertJson(item, `${at}.${key}`)
+}
+
+/** mountWorker, with every panel answer checked as Orca checks it. */
+async function mount(...args: Parameters<typeof mountWorker>): ReturnType<typeof mountWorker> {
+  const worker = await mountWorker(...args)
+  const request = worker.request.bind(worker) as (...input: unknown[]) => Promise<unknown>
+  worker.request = (async (...input: unknown[]) => {
+    const answer = await request(...input)
+    assertJson(answer, `${String(input[0])} answer`)
+    return answer
+  }) as typeof worker.request
+  return worker
+}
+
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
 let dir = ''
 afterEach(() => dir && rmSync(dir, { recursive: true, force: true }))
@@ -53,7 +78,7 @@ test('lists captures newest first and reports broken ones', async () => {
     broken: '{"version": 1}',
     drawing: null
   })
-  const worker = await mountWorker(main, { host: host(path) })
+  const worker = await mount(main, { host: host(path) })
   const listing = await worker.request('captures.list')
   assert.equal(listing.workspace?.id, 'ws1')
   assert.deepEqual(listing.captures.map((c) => c.id), ['fresh', 'old'])
@@ -65,7 +90,7 @@ test('lists captures newest first and reports broken ones', async () => {
 test('serves a view as a data URL and opens its source in a tab', async () => {
   const path = workspaceWith({ one: capture('2026-11-09T00:00:00Z') })
   const mock = host(path)
-  const worker = await mountWorker(main, { host: mock })
+  const worker = await mount(main, { host: mock })
   const image = await worker.request('captures.image', { captureId: 'one', view: 0 })
   assert.match(image.url, /^data:image\/svg\+xml;base64,/)
   assert.equal(Buffer.from(image.url.split(',')[1], 'base64').toString(), SVG)
@@ -88,7 +113,7 @@ test('opens a walkthrough in its editor, and code it links to, never .env or .gi
   writeFileSync(join(path, 'lib/a.dart'), '')
   writeFileSync(join(path, '.env'), 'SECRET=1')
   const mock = host(path)
-  const worker = await mountWorker(main, { host: mock })
+  const worker = await mount(main, { host: mock })
 
   const guided = await worker.request('captures.get', { captureId: 'guided' })
   assert.equal(guided.walkthrough, 'walkthrough.debrief.json')
@@ -138,7 +163,7 @@ function gitRepo(files: Record<string, string> = {}) {
 
 test('reads the branch history down to where it left main', async () => {
   const { path, base, one, two } = gitRepo()
-  const worker = await mountWorker(main, { host: host(path) })
+  const worker = await mount(main, { host: host(path) })
   const history = await worker.request('git.history')
   assert.deepEqual(history.commits.map((c) => c.sha), [two, one])
   assert.equal(history.commits[0].subject, 'add c')
@@ -192,7 +217,7 @@ async function until<T>(read: () => Promise<T>, ok: (value: T) => boolean): Prom
 test('runs a commit range in the background and reports what it cost', async () => {
   const { path, base, one, two } = gitRepo()
   const claude = fakeClaude(path)
-  const worker = await mountWorker(main, { host: host(path, [], { claudeCommand: claude }) })
+  const worker = await mount(main, { host: host(path, [], { claudeCommand: claude }) })
 
   // Orca's worker has no USER; the run must still find the login (the fake fails without it).
   const user = process.env.USER
@@ -233,7 +258,7 @@ test('reviews a capture in its own background run and lists what it found', asyn
   writeFileSync(join(folder, 'before.svg'), SVG)
   writeFileSync(join(folder, 'after.svg'), SVG)
   writeFileSync(join(folder, 'capture.json'), JSON.stringify({ ...capture('2026-11-09T00:00:00Z'), base, commit: two }))
-  const worker = await mountWorker(main, { host: host(path, [], { claudeCommand: claude, ghCommand: fakeGh(path, 'none') }) })
+  const worker = await mount(main, { host: host(path, [], { claudeCommand: claude, ghCommand: fakeGh(path, 'none') }) })
 
   const { jobId } = await worker.request('captures.review', { captureId: 'drawn' })
   // A second press while it is queued or running joins the same run.
@@ -272,7 +297,7 @@ test('a review reads the repository\'s review rules as they were before the chan
   writeFileSync(join(folder, 'before.svg'), SVG)
   writeFileSync(join(folder, 'after.svg'), SVG)
   writeFileSync(join(folder, 'capture.json'), JSON.stringify({ ...capture('2026-11-09T00:00:00Z'), base, commit: change }))
-  const worker = await mountWorker(main, { host: host(path, [], { claudeCommand: fakeClaude(path), ghCommand: fakeGh(path, 'none') }) })
+  const worker = await mount(main, { host: host(path, [], { claudeCommand: fakeClaude(path), ghCommand: fakeGh(path, 'none') }) })
 
   await worker.request('captures.review', { captureId: 'drawn' })
   await until(() => worker.request('jobs.list'), (list) => list.find((j) => j.kind === 'review')?.status === 'done')
@@ -289,7 +314,7 @@ test('a review without a rules file has no project rules', async () => {
   writeFileSync(join(folder, 'before.svg'), SVG)
   writeFileSync(join(folder, 'after.svg'), SVG)
   writeFileSync(join(folder, 'capture.json'), JSON.stringify({ ...capture('2026-11-09T00:00:00Z'), base, commit: two }))
-  const worker = await mountWorker(main, { host: host(path, [], { claudeCommand: fakeClaude(path), ghCommand: fakeGh(path, 'none') }) })
+  const worker = await mount(main, { host: host(path, [], { claudeCommand: fakeClaude(path), ghCommand: fakeGh(path, 'none') }) })
   await worker.request('captures.review', { captureId: 'drawn' })
   await until(() => worker.request('jobs.list'), (list) => list.find((j) => j.kind === 'review')?.status === 'done')
   const args = JSON.parse(readFileSync(join(path, 'args.log'), 'utf8').trim().split('\n')[0])
@@ -300,7 +325,7 @@ test('a review without a rules file has no project rules', async () => {
 
 test('reviews one commit without drawing it, in a review-only capture it reuses', async () => {
   const { path, one, two } = gitRepo()
-  const worker = await mountWorker(main, { host: host(path, [], { claudeCommand: fakeClaude(path), ghCommand: fakeGh(path, 'none') }) })
+  const worker = await mount(main, { host: host(path, [], { claudeCommand: fakeClaude(path), ghCommand: fakeGh(path, 'none') }) })
 
   const first = await worker.request('review.request', { from: one, to: two })
   const made = (await worker.request('captures.list')).captures.find((c) => c.id === first.captureId)
@@ -331,7 +356,7 @@ test('reviews one commit without drawing it, in a review-only capture it reuses'
 
 test('reviews the uncommitted changes, and refuses a range with nothing in it', async () => {
   const { path, two } = gitRepo()
-  const worker = await mountWorker(main, { host: host(path, [], { claudeCommand: fakeClaude(path), ghCommand: fakeGh(path, 'none') }) })
+  const worker = await mount(main, { host: host(path, [], { claudeCommand: fakeClaude(path), ghCommand: fakeGh(path, 'none') }) })
   const { captureId } = await worker.request('review.request', { uncommitted: true })
   const made = (await worker.request('captures.list')).captures.find((c) => c.id === captureId)
   assert.equal(made?.title, 'Uncommitted changes')
@@ -375,7 +400,7 @@ for (const mode of ['pr', 'broken', 'none'] as const) {
     writeFileSync(join(folder, 'before.svg'), SVG)
     writeFileSync(join(folder, 'after.svg'), SVG)
     writeFileSync(join(folder, 'capture.json'), JSON.stringify({ ...capture('2026-11-09T00:00:00Z'), base, commit: two }))
-    const worker = await mountWorker(main, {
+    const worker = await mount(main, {
       host: host(path, [], { claudeCommand: fakeClaude(path), ghCommand: fakeGh(path, mode) })
     })
     const answer = await worker.request('git.pr')
@@ -401,7 +426,7 @@ for (const mode of ['pr', 'broken', 'none'] as const) {
 
 test('refuses a bad range before queueing anything', async () => {
   const { path, base, two } = gitRepo()
-  const worker = await mountWorker(main, { host: host(path) })
+  const worker = await mount(main, { host: host(path) })
   await assert.rejects(worker.request('captures.request', { from: two, to: base }), /older than To/)
   await assert.rejects(worker.request('captures.request', { from: 'HEAD~1; rm -rf /', to: two }), /Pick two commits/)
   await assert.rejects(worker.request('captures.request', { from: 'abcdef1234', to: two }), /not a commit/)
@@ -435,7 +460,7 @@ test('reads cited code from git at the capture commits, and figures from its fol
       'workspace.list': { workspaces: [{ id: 'ws1', kind: 'worktree', name: 'my-worktree', path, branch: 'feature/x', hostId: 'local' }], truncated: false }
     }
   })
-  const worker = await mountWorker(main, { host: mock })
+  const worker = await mount(main, { host: mock })
   const cite = (file: string, show: string) => worker.request('code.cite', { captureId: 'cited', cite: { path: file, lines: [1, 1], show } as never })
 
   const diff = await cite('c', 'diff')
@@ -467,7 +492,7 @@ test('a capture reads the repository\'s capture rules as committed at HEAD', asy
   writeFileSync(join(path, '.debrief/capture.md'), '- Draw everything.\n')
   const expected = { path: '.debrief/capture.md', from: head, text: '- Call it the conductor.' }
 
-  const worker = await mountWorker(main, { host: host(path, [], { claudeCommand: fakeClaude(path) }) })
+  const worker = await mount(main, { host: host(path, [], { claudeCommand: fakeClaude(path) }) })
   await worker.request('captures.request', {})
   await until(() => worker.request('jobs.list'), (list) => list[0]?.status === 'done')
   const args = JSON.parse(readFileSync(join(path, 'args.log'), 'utf8').trim().split('\n')[0])
@@ -477,7 +502,7 @@ test('a capture reads the repository\'s capture rules as committed at HEAD', asy
 
   const idle = { terminalId: 't1', title: 'Claude', agent: 'claude', state: 'done', stateStartedAt: 0 }
   const mock = host(path, [idle], { captureTarget: 'idle-agent' })
-  const handed = await mountWorker(main, { host: mock })
+  const handed = await mount(main, { host: mock })
   await handed.request('captures.request', { uncommitted: true })
   const sent = mock.callsOf('terminal.sendText')[0] as { text: string }
   assert.deepEqual(JSON.parse(readFileSync(join(path, sent.text.split('brief=')[1]), 'utf8')).projectRules, expected)
@@ -488,7 +513,7 @@ test('hands a brief to an idle claude when the setting says so', async () => {
   const { path } = gitRepo()
   const idle = { terminalId: 't1', title: 'Claude', agent: 'claude', state: 'done', stateStartedAt: 0 }
   const mock = host(path, [{ ...idle, terminalId: 't2', state: 'working' }, idle], { captureTarget: 'idle-agent' })
-  const worker = await mountWorker(main, { host: mock })
+  const worker = await mount(main, { host: mock })
   const answer = await worker.request('captures.request', { uncommitted: true })
   assert.equal(answer.how, 'sent')
   const sent = mock.callsOf('terminal.sendText')[0] as { terminalId: string; text: string }
@@ -510,7 +535,7 @@ test('deletes run files a week after the run finished, and keeps newer ones', as
   }
   const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000)
   utimesSync(join(jobs, 'r-old.exit'), eightDaysAgo, eightDaysAgo)
-  const worker = await mountWorker(main, { host: host(path) })
+  const worker = await mount(main, { host: host(path) })
   await worker.request('jobs.list')
   assert.deepEqual(readdirSync(jobs).sort(), ['r-new.brief.json', 'r-new.exit', 'r-new.log'])
   await worker.deactivate()

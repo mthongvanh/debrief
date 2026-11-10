@@ -60,6 +60,14 @@ function text(value: unknown, field: string, optional = false): string | undefin
   return value
 }
 
+/**
+ * `value` without its undefined fields. A parsed capture goes to panels as it is, and Orca refuses
+ * a panel answer holding undefined ("answered with a non-JSON value"), though JSON.stringify drops it.
+ */
+function withoutUndefined<T extends object>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T
+}
+
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], field: string): T {
   if (!allowed.includes(value as T)) fail(`"${field}" must be one of ${allowed.join(', ')}`)
   return value as T
@@ -87,13 +95,13 @@ function parseView(raw: unknown, index: number): CaptureView {
   if (!(extensionOf(image) in IMAGE_TYPES)) {
     fail(`views[${index}].image must be one of ${Object.keys(IMAGE_TYPES).join(' ')}`)
   }
-  return {
+  return withoutUndefined({
     role: oneOf(view.role, ROLES, `views[${index}].role`),
     title: text(view.title, `views[${index}].title`) as string,
     caption: text(view.caption, `views[${index}].caption`, true),
     image,
     source: insidePath(view.source, `views[${index}].source`, true)
-  }
+  })
 }
 
 /** Reads one capture.json. Throws CaptureError naming the first field that is wrong. */
@@ -124,7 +132,7 @@ export function parseCapture(id: string, json: string): Capture {
   const files = Array.isArray(data.files) ? data.files : []
   const walkthrough = insidePath(data.walkthrough, 'walkthrough', true)
   if (walkthrough !== undefined && !walkthrough.endsWith('.debrief.json')) fail('"walkthrough" must end in .debrief.json')
-  return {
+  return withoutUndefined({
     id,
     title: text(data.title, 'title') as string,
     kind,
@@ -142,7 +150,7 @@ export function parseCapture(id: string, json: string): Capture {
     }),
     views,
     walkthrough
-  }
+  })
 }
 
 export function newestFirst(a: Capture, b: Capture): number {
