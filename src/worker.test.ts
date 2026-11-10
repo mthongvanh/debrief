@@ -457,6 +457,33 @@ test('reads cited code from git at the capture commits, and figures from its fol
   await worker.deactivate()
 })
 
+test('a capture reads the repository\'s capture rules as committed at HEAD', async () => {
+  const { path } = gitRepo({ '.debrief/capture.md': '- Call it the turn engine.\n' })
+  const run = (...args: string[]) => execFileSync('git', ['-C', path, ...args], { encoding: 'utf8' }).trim()
+  writeFileSync(join(path, '.debrief/capture.md'), '- Call it the conductor.\n')
+  run('commit', '-q', '-am', 'rename it')
+  const head = run('rev-parse', 'HEAD')
+  // An edit nobody committed yet is not read.
+  writeFileSync(join(path, '.debrief/capture.md'), '- Draw everything.\n')
+  const expected = { path: '.debrief/capture.md', from: head, text: '- Call it the conductor.' }
+
+  const worker = await mountWorker(main, { host: host(path, [], { claudeCommand: fakeClaude(path) }) })
+  await worker.request('captures.request', {})
+  await until(() => worker.request('jobs.list'), (list) => list[0]?.status === 'done')
+  const args = JSON.parse(readFileSync(join(path, 'args.log'), 'utf8').trim().split('\n')[0])
+  const brief = JSON.parse(readFileSync(join(path, args[1].split('brief=')[1].trim()), 'utf8'))
+  assert.deepEqual(brief.projectRules, expected)
+  await worker.deactivate()
+
+  const idle = { terminalId: 't1', title: 'Claude', agent: 'claude', state: 'done', stateStartedAt: 0 }
+  const mock = host(path, [idle], { captureTarget: 'idle-agent' })
+  const handed = await mountWorker(main, { host: mock })
+  await handed.request('captures.request', { uncommitted: true })
+  const sent = mock.callsOf('terminal.sendText')[0] as { text: string }
+  assert.deepEqual(JSON.parse(readFileSync(join(path, sent.text.split('brief=')[1]), 'utf8')).projectRules, expected)
+  await handed.deactivate()
+})
+
 test('hands a brief to an idle claude when the setting says so', async () => {
   const { path } = gitRepo()
   const idle = { terminalId: 't1', title: 'Claude', agent: 'claude', state: 'done', stateStartedAt: 0 }

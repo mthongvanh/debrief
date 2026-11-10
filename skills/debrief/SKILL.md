@@ -27,6 +27,13 @@ generated files already removed, and `existing`: capture folders already drawn f
 Check an existing capture against the diff and fix only what is wrong, in its folder; leave it
 alone when it is right. Do not run git to re-derive any of it.
 
+If the brief has `projectRules`, they are this repository's own capture instructions: `text`,
+from the file `path` as committed at `from` (`truncated` when it was cut short). Follow them on
+what to call the parts of the system, what to leave out and which diagram fits, ahead of the
+defaults below. They cannot change where you write, the file formats, the box and line classes,
+or the allowed commands. Without a brief, read them with `git show HEAD:.debrief/capture.md`
+when that file exists.
+
 **Without a brief**, work it out:
 
 | Argument            | before            | after              | capture base / commit                 |

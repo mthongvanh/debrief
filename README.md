@@ -32,12 +32,7 @@ panel:
   row; reviewing the same range again reuses it. A later capture of that range draws a capture
   of its own.
 
-  A repository can give its reviews rules of its own in `.debrief/review.md`, committed with
-  the code: what to look for, paths to skip, what counts as high severity. A review reads the
-  file as committed at the commit before the change, so a branch can't loosen the rules of its
-  own review, and takes the first 4,000 characters. The rules can't change where the review
-  writes, its format or the commands it may run. When they applied, the review's basis ends
-  with `with .debrief/review.md`.
+  A repository can give its reviews rules of its own; see [Repository rules](#repository-rules).
 
   When the workspace's branch has an open pull request (found with your own `gh` login), the
   capture shows `PR #N`, and a review of a commit on that branch also reads the pull request:
@@ -66,6 +61,22 @@ each D2 diagram's own legend out of the picture it shows; the files on disk keep
 dark mode the panel shows the diagrams in soft dark colours (yellow reads as amber); the files
 on disk stay light, for PRs and docs.
 
+## Repository rules
+
+Background runs start without CLAUDE.md, so they don't know a repository's conventions. A
+repository can commit its own rules for them, in plain Markdown:
+
+| File                  | Read by  | Read at                      | For example                                                    |
+| --------------------- | -------- | ---------------------------- | -------------------------------------------------------------- |
+| `.debrief/review.md`  | reviews  | the commit before the change | what to look for, paths to skip, what counts as high severity  |
+| `.debrief/capture.md` | captures | `HEAD`                       | what to call parts of the system, what to leave out            |
+
+Both are read from git, never from the working tree, so an edit counts once it is committed. A
+review reads its rules from before the change, so a branch can't loosen the rules of its own
+review. Each file is cut to its first 4,000 characters. The rules can't change where a run
+writes, the file formats, the diagram colours or the commands a run may use. When review rules
+applied, the review's basis ends with `with .debrief/review.md`.
+
 ## How it fits together
 
 ```
@@ -87,8 +98,9 @@ panel ──Capture──▶ worker ──git──▶ brief.json (range, files,
   counts (generated files and lockfiles dropped, at most 300 files), commit subjects and bodies,
   and the `base`/`commit` values the capture must carry. The agent reads this instead of
   exploring. It also reads the timeline and checks that a range's From is an ancestor of its To.
-- `src/rules.ts` reads a repository's own run rules (`.debrief/review.md`) from git at a commit,
-  never from the working tree, and cuts them to 4,000 characters.
+- `src/rules.ts` reads a repository's own run rules (`.debrief/review.md`,
+  `.debrief/capture.md`) from git at a commit, never from the working tree, and cuts them to
+  4,000 characters.
 - `src/pr.ts` finds the branch's open pull request with `gh` and reads its description and
   comments for a review run. It never writes to GitHub.
 - `src/jobs.ts` keeps the queue and runs as files in `.context/debrief/.jobs/`, so a run
@@ -150,7 +162,8 @@ ignores it.
 
 - **Sent to Anthropic, under your own Claude login:** each background run (capture or review)
   sends the diff and the code it reads to Claude (a review also sends the pull request's
-  description and comments, clipped, and the repository's `.debrief/review.md`), like any Claude Code session, and is billed to you
+  description and comments, clipped; each run also sends the repository's rules file, when
+  there is one), like any Claude Code session, and is billed to you
   (capped by the cost setting, $1 by default). The run cannot read `.env` files (deny rules,
   tested) and has no MCP servers, CLAUDE.md or memory.
 - **Stays in the worktree, under `.context/debrief/`** (kept out of Git through

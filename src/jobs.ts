@@ -33,6 +33,8 @@ type CaptureBrief = {
   lookDir: string
   scopes: BriefScope[]
   rules: string[]
+  /** The repository's own capture instructions, read at HEAD. */
+  projectRules?: ProjectRules
 }
 /** What a review run gets: one capture, its change worked out from git, and where to write. */
 export type ReviewTarget = {
@@ -317,6 +319,8 @@ export async function pruneRuns(root: string): Promise<void> {
 export type RunSources = {
   scopeFor: (scope: CaptureScope) => Promise<BriefScope>
   reviewFor: (captureId: string) => Promise<ReviewTarget>
+  /** The repository's capture rules, when it has them. */
+  captureRules: () => Promise<ProjectRules | undefined>
 }
 
 /**
@@ -369,6 +373,7 @@ export async function startNext(root: string, cwd: string, settings: RunnerSetti
     scopes.push(await sources.scopeFor(entry.scope))
   }
   if (scopes.length === 0) return null
+  const projectRules = await sources.captureRules()
   const brief: CaptureBrief = {
     id,
     createdAt: now,
@@ -377,7 +382,8 @@ export async function startNext(root: string, cwd: string, settings: RunnerSetti
     skillDir: skill,
     lookDir: relative(cwd, join(dir, `r-${id}-look`)),
     scopes,
-    rules: RULES
+    rules: RULES,
+    ...(projectRules ? { projectRules } : {})
   }
   await writeFile(briefPath, JSON.stringify(brief, null, 2))
   await launch(dir, id, cwd, settings, {

@@ -22,7 +22,7 @@ import { capRows, diffWindow, sliceFile } from './cite.ts'
 import { parseCite, parseWalkthrough, repoPath } from './walkthrough.ts'
 import { REVIEW_FILE, parseReview, summarize } from './review.ts'
 import { findOpenPr, readPrContext, type PrContext as PrContextType, type PullRequest } from './pr.ts'
-import { REVIEW_RULES_FILE, readProjectRules } from './rules.ts'
+import { CAPTURE_RULES_FILE, REVIEW_RULES_FILE, readProjectRules } from './rules.ts'
 
 /** Answers are capped at 1 MiB and base64 grows a file by a third. */
 const MAX_IMAGE_BYTES = 700 * 1024
@@ -374,7 +374,8 @@ export default function activate(orca: OrcaWorkerApi): void {
             captureDir: relative(await realpath(workspace.path), folder).split(sep).join('/'),
             scope
           }
-        }
+        },
+        captureRules: () => readProjectRules(workspace.path, CAPTURE_RULES_FILE, 'HEAD')
       })
       if (started) {
         orca.log(`started background run ${started}`)
@@ -498,7 +499,11 @@ export default function activate(orca: OrcaWorkerApi): void {
       if (idle?.terminalId) {
         await mkdir(jobsDir(root), { recursive: true })
         const path = join(jobsDir(root), `i-${Date.now().toString(36)}.brief.json`)
-        const content = { capturesDir: relative(workspace.path, root), skillDir: skillDir(), lookDir: relative(workspace.path, join(jobsDir(root), 'look')), scopes: [brief], rules: [] }
+        const projectRules = await readProjectRules(workspace.path, CAPTURE_RULES_FILE, 'HEAD')
+        const content = {
+          capturesDir: relative(workspace.path, root), skillDir: skillDir(), lookDir: relative(workspace.path, join(jobsDir(root), 'look')),
+          scopes: [brief], rules: [], ...(projectRules ? { projectRules } : {})
+        }
         await writeFile(path, JSON.stringify(content, null, 2))
         await orca.host.call('terminal.sendText', {
           terminalId: idle.terminalId,
