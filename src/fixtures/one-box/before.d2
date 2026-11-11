@@ -1,0 +1,31 @@
+...@_style
+...@_classes
+
+direction: down
+
+svc: "Caller\nCaller" {class: unchanged}
+socket: "Client socket\nClientSocket" {class: changed}
+dg: "Remote API" {class: external}
+listener: "Result listener" {class: unchanged}
+
+svc -> socket: opens socket
+socket -> dg: "option off" {class: changed-line}
+dg -> socket: results
+socket -> listener: "results, never end flag" {class: changed-line}
+
+legend: "" {
+  grid-rows: 4
+  grid-columns: 2
+  grid-gap: 10
+  style: {fill: "#f3f1ea"; stroke-width: 1}
+  *.style.font-size: 16
+  *.style.bold: false
+  unchanged: "" {class: [unchanged; key]}
+  unchanged-label: Unchanged {shape: text}
+  changed: "" {class: [changed; key]}
+  changed-label: Changed by this work {shape: text}
+  added: "" {class: [added; key]}
+  added-label: New in this work {shape: text}
+  external: "" {class: [external; key]}
+  external-label: Outside this codebase {shape: text}
+}

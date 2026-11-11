@@ -530,6 +530,8 @@ test('hands a brief to an idle claude when the setting says so', async () => {
   const brief = JSON.parse(readFileSync(join(path, sent.text.split('brief=')[1]), 'utf8'))
   assert.equal(brief.scopes[0].label, 'uncommitted')
   assert.deepEqual(brief.scopes[0].files.map((f: { path: string }) => f.path), ['d'])
+  // An idle agent is held to the walkthrough rule too.
+  assert.ok(brief.rules.some((rule: string) => /Budget is never a reason/.test(rule)))
   await worker.deactivate()
 })
 
@@ -622,5 +624,53 @@ test('keeps notes on a capture, hands them off by copy or a new claude, and neve
 
   await worker.request('notes.remove', { captureId: 'noted', id: first.id })
   assert.equal((await list()).length, 1)
+  await worker.deactivate()
+})
+
+/** Copies a capture from src/fixtures into the workspace's captures folder, capture.json edited by `change`. */
+function copyFixture(path: string, name: string, id: string, change: (capture: Record<string, unknown>) => Record<string, unknown> = (c) => c) {
+  const from = new URL(`./fixtures/${name}/`, import.meta.url)
+  const folder = join(path, '.context/debrief', id)
+  mkdirSync(folder, { recursive: true })
+  for (const file of readdirSync(from)) {
+    const text = readFileSync(new URL(file, from), 'utf8')
+    writeFileSync(join(folder, file), file === 'capture.json' ? JSON.stringify(change(JSON.parse(text))) : text)
+  }
+}
+
+test('flags a capture that skipped a walkthrough it owed, counting boxes and not files', async () => {
+  const path = workspaceWith({})
+  // The shape of the capture a 2026-11-11 run skipped: 7 boxes changed or added, no walkthrough.
+  copyFixture(path, 'seven-boxes', 'owed')
+  // Its sibling: one changed box, so it may skip one.
+  copyFixture(path, 'one-box', 'small')
+  // The same diagram with a walkthrough is fine.
+  copyFixture(path, 'seven-boxes', 'guided', (c) => ({ ...c, walkthrough: 'walkthrough.debrief.json' }))
+  // A view whose .d2 source is gone counts no boxes rather than failing the listing.
+  copyFixture(path, 'seven-boxes', 'lost-source', (c) => ({ ...c, views: [{ role: 'flow', title: 'Flow', image: 'flow.svg', source: 'gone.d2' }] }))
+  const worker = await mount(main, { host: host(path) })
+  const listing = await worker.request('captures.list')
+  const byId = Object.fromEntries(listing.captures.map((c) => [c.id, c]))
+  assert.deepEqual(byId['owed'].walkthroughMissing, { boxes: 7 })
+  assert.equal(byId.small.walkthroughMissing, undefined)
+  assert.equal(byId.guided.walkthroughMissing, undefined)
+  assert.equal(byId['lost-source'].walkthroughMissing, undefined)
+  assert.deepEqual((await worker.request('captures.get', { captureId: 'owed' })).walkthroughMissing, { boxes: 7 })
+  assert.deepEqual(listing.problems, [])
+  await worker.deactivate()
+})
+
+test('capturing the range again tells the run which capture owes a walkthrough, and that budget is no excuse', async () => {
+  const { path, one, two } = gitRepo()
+  copyFixture(path, 'seven-boxes', 'owed', (c) => ({ ...c, base: one, commit: two }))
+  copyFixture(path, 'one-box', 'small', (c) => ({ ...c, base: one, commit: two }))
+  const worker = await mount(main, { host: host(path, [], { claudeCommand: fakeClaude(path) }) })
+  await worker.request('captures.request', { from: one, to: two })
+  await until(() => worker.request('jobs.list'), (list) => list[0]?.status === 'done')
+  const args = JSON.parse(readFileSync(join(path, 'args.log'), 'utf8').trim())
+  const brief = JSON.parse(readFileSync(join(path, args[1].split('brief=')[1].trim()), 'utf8'))
+  assert.deepEqual([...brief.scopes[0].existing].sort(), ['owed', 'small'])
+  assert.deepEqual(brief.scopes[0].missingWalkthrough, ['owed'])
+  assert.ok(brief.rules.some((rule: string) => /walkthrough/.test(rule) && /Budget is never/.test(rule) && /boxes, not files/.test(rule)))
   await worker.deactivate()
 })

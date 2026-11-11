@@ -113,6 +113,8 @@ export type BriefScope = {
   truncated: boolean
   /** Capture folders already drawn for this exact base and commit: redraw these, do not add one. */
   existing?: string[]
+  /** Those of `existing` with more than one changed or added box and no walkthrough: write one. */
+  missingWalkthrough?: string[]
 }
 
 /** Merges `--name-status -M` and `--numstat -M` output into one list. */

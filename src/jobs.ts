@@ -264,11 +264,20 @@ export async function dismissJob(root: string, id: string): Promise<void> {
   await writeFile(join(jobsDir(root), `r-${id}.dismissed`), '')
 }
 
+/**
+ * The walkthrough rule, in every capture brief: a run once skipped one "to save budget" with most
+ * of its budget left, and another skipped one because the change was "one socket file".
+ */
+export const WALKTHROUGH_RULE =
+  'Every capture whose diagrams mark more than one box changed or added gets a walkthrough, in every scope of this brief, ' +
+  'and so does each capture a scope lists in missingWalkthrough. Count boxes, not files. Budget is never a reason to skip one.'
+
 const RULES = [
   'Draw only what this brief lists; it was worked out from git, so do not re-derive the scope.',
   'Write only under capturesDir; never edit code, commit, push or stash.',
   'Put each scope\'s capture.json base and commit exactly as given in its "capture" field.',
-  'Use lookDir for look-check screenshots.'
+  'Use lookDir for look-check screenshots.',
+  WALKTHROUGH_RULE
 ]
 
 const REVIEW_RULES = [
@@ -324,9 +333,10 @@ export type RunSources = {
 }
 
 /**
- * Starts the next run when nothing is running: a review request on its own, or every queued
- * capture request in one run. Returns the new run's id, or null when a run is already going or
- * the queue is empty.
+ * Starts the next run when nothing is running: the oldest queued request, a review or one capture
+ * scope, each in a run of its own with its own cost cap. Later requests for the same scope are
+ * dropped with it, since they would draw the same thing. Returns the new run's id, or null when a
+ * run is already going or the queue is empty.
  */
 export async function startNext(root: string, cwd: string, settings: RunnerSettings, sources: RunSources): Promise<string | null> {
   const current = await listJobs(root)
@@ -363,16 +373,12 @@ export async function startNext(root: string, cwd: string, settings: RunnerSetti
     return id
   }
 
-  const scopes: BriefScope[] = []
-  const seen = new Set<string>()
+  // One scope per run: a run drawing several shared one budget and skipped a walkthrough to save it.
+  const { entry: first } = entries[0]
   for (const { name, entry } of entries) {
-    if (entry.kind === 'review') continue
-    await rm(join(dir, name), { force: true })
-    if (seen.has(entry.label)) continue
-    seen.add(entry.label)
-    scopes.push(await sources.scopeFor(entry.scope))
+    if (entry.kind !== 'review' && entry.label === first.label) await rm(join(dir, name), { force: true })
   }
-  if (scopes.length === 0) return null
+  const scopes: BriefScope[] = [await sources.scopeFor(first.scope)]
   const projectRules = await sources.captureRules()
   const brief: CaptureBrief = {
     id,

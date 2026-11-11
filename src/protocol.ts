@@ -13,6 +13,9 @@ export type ListedCapture = Capture & {
   review?: ReviewSummary
   reviewProblem?: string
   walkthroughSize?: { steps: number; decisions: number }
+  /** Set when the capture has no walkthrough though its diagrams mark more than one box changed
+   *  or added, so the skill owed it one: `boxes` is how many. */
+  walkthroughMissing?: { boxes: number }
 }
 
 export type CaptureListing = {

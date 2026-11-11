@@ -1,0 +1,36 @@
+...@_style
+...@_classes
+
+direction: down
+
+flag: "Remote flag\nnew-toggle" {class: external}
+flags: "Feature flags\nisToggleAllowed" {class: changed}
+btn: "Settings button\nSettingsButton" {class: changed}
+sheet: "Settings sheet\nSettingsSheet" {class: changed}
+row: "Toggle row\nshowToggle" {class: added}
+hidden: "Row hidden\nflag off" {class: added}
+model: "Settings model\ntoggleOn" {class: added}
+store: "Settings store\nsetToggle" {class: changed}
+
+flag -> flags: "off by default" {class: added-line}
+flags -> btn: "isToggleAllowed" {class: added-line}
+btn -> sheet: "showToggle" {class: added-line}
+sheet -> row: "flag on" {class: added-line}
+sheet -> hidden: "flag off" {class: added-line}
+row -> store: "toggle" {class: added-line}
+store -> model: "null means on" {class: added-line}
+
+legend: "" {
+  grid-rows: 3
+  grid-columns: 2
+  grid-gap: 10
+  style: {fill: "#f3f1ea"; stroke-width: 1}
+  *.style.font-size: 16
+  *.style.bold: false
+  changed: "" {class: [changed; key]}
+  changed-label: Changed by this work {shape: text}
+  added: "" {class: [added; key]}
+  added-label: New in this work {shape: text}
+  external: "" {class: [external; key]}
+  external-label: Outside this codebase {shape: text}
+}

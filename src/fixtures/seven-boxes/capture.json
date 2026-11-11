@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "title": "A settings toggle behind a flag",
+  "kind": "addition",
+  "summary": "The settings sheet gains a toggle, shown only when a remote flag is on. Nothing reads it yet.",
+  "createdAt": "2026-11-11T08:20:00Z",
+  "base": "1111111111111111111111111111111111111111",
+  "commit": "2222222222222222222222222222222222222222",
+  "basis": "code reading of 111111111..222222222; tests not run; diagrams not looked at",
+  "files": [
+    {
+      "path": "lib/models/settings.dart",
+      "status": "modified"
+    },
+    {
+      "path": "lib/settings/settings_button.dart",
+      "status": "modified"
+    },
+    {
+      "path": "lib/settings/settings_sheet.dart",
+      "status": "modified"
+    },
+    {
+      "path": "lib/settings/settings_page.dart",
+      "status": "modified"
+    },
+    {
+      "path": "lib/flags/feature_flag.dart",
+      "status": "modified"
+    },
+    {
+      "path": "lib/flags/feature_flags.dart",
+      "status": "modified"
+    },
+    {
+      "path": "lib/storage/settings_store.dart",
+      "status": "modified"
+    }
+  ],
+  "views": [
+    {
+      "role": "flow",
+      "title": "Flow",
+      "image": "flow.svg",
+      "source": "flow.d2",
+      "caption": "Green: the flag-gated toggle and the stored value."
+    }
+  ]
+}

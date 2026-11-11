@@ -25,7 +25,8 @@ shas; `after` may be `working-tree`), `capture.base` / `capture.commit` to copy 
 `capture.json` exactly, `commits` (subjects: the intent; bodies, when present: the why), and `files` with status and line counts,
 generated files already removed, and `existing`: capture folders already drawn for this range.
 Check an existing capture against the diff and fix only what is wrong, in its folder; leave it
-alone when it is right. Do not run git to re-derive any of it.
+alone when it is right. `missingWalkthrough` lists the existing ones that are owed a walkthrough
+(section 5) and have none: write it. Do not run git to re-derive any of it.
 
 If the brief has `projectRules`, they are this repository's own capture instructions: `text`,
 from the file `path` as committed at `from` (`truncated` when it was cut short). Follow them on
@@ -167,8 +168,15 @@ The editor refuses text over its limits (point 140 characters, at most 4 points 
   decision). Start from `<skillDir>/templates/idea.d2`; file names start `idea-`. Render and look
   at them with the views.
 
-Paths are workspace-relative; never `.env` files. Skip the walkthrough only for a capture with
-one box changed; say so in the report.
+Paths are workspace-relative; never `.env` files.
+
+**Every capture gets a walkthrough unless its diagrams mark at most one box `changed` or
+`added`.** Count boxes in the `.d2` files you drew, across all views, leaving out the legend; a
+box in both before and after counts once. Count boxes, not files: one file can hold several
+changed boxes, and "one socket file" or "a small change" is not a reason. Budget is never a
+reason to skip one: every capture that qualifies gets a walkthrough, in every scope of the
+brief; keep each to 3 steps and 2 decisions rather than drop one. A capture that
+qualifies and has no walkthrough is shown in the panel as "walkthrough missing".
 
 ## 6. capture.json, last
 
@@ -196,4 +204,5 @@ one box changed; say so in the report.
 
 ## 7. Report
 
-One line per capture (title, kind, folder, walkthrough or not) and what you skipped and why. Do not paste diagrams.
+One line per capture (title, kind, folder, and its walkthrough, or "no walkthrough: N box
+changed" when it has at most one) and what you skipped and why. Do not paste diagrams.

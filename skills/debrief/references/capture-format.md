@@ -15,7 +15,7 @@ file that breaks a rule below and shows the reason above the list, so fix and re
 | `basis`     | string                     | what the diagrams rest on, and what was not run                             |
 | `files`     | `{path, status}[]`         | `status`: `added`, `modified`, `deleted` or `renamed`; tests included       |
 | `views`     | view[]                     | required; a modification needs a `before` and an `after`, an addition a `flow` |
-| `walkthrough` | string                   | optional; the walkthrough file in the folder, ending in `.debrief.json`          |
+| `walkthrough` | string                   | the walkthrough file in the folder, ending in `.debrief.json`; required when the views mark more than one box `changed` or `added`, or the panel flags "walkthrough missing" |
 
 A view:
 

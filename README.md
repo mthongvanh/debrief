@@ -120,7 +120,7 @@ panel ──Capture──▶ worker ──git──▶ brief.json (range, files,
       ──Review───▶   │      ──gh───▶ open pull request: description, comments (read-only)
                      │
                      ├─ background (default): claude -p, one run at a time
-                     │     capture runs: SKILL.md as the system prompt, queued requests batched
+                     │     capture runs: SKILL.md as the system prompt, one scope each
                      │     review runs:  REVIEW.md as the system prompt, one capture each
                      └─ idle-agent setting: types the capture prompt into an idle Claude
                                    │

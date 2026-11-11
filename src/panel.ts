@@ -186,6 +186,7 @@ button.pill { cursor: pointer; }
 .pill.on { background: var(--orca-accent); color: var(--orca-accent-foreground); border-color: transparent; }
 .pill.bad { color: var(--orca-destructive); border-color: currentColor; }
 .pill.warn { color: var(--orca-foreground); }
+.flag-bad { color: var(--orca-destructive); font-weight: 500; }
 .ring { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--orca-primary); }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.4s ease-in-out infinite; }
 .cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
@@ -681,7 +682,32 @@ function header(capture: ListedCapture, pr: PullRequest | null): HTMLElement {
   )
 }
 
+/** The range a capture was drawn from, as a scope to capture it again. */
+function scopeOf(capture: Capture): CaptureScope | null {
+  const base = capture.base ?? ''
+  const commit = capture.commit ?? ''
+  if (!base || !commit) return null
+  return isDirty(capture) ? { from: base, uncommitted: true } : { from: base, to: commit }
+}
+
+/** Shown in place of the walkthrough when the skill owed this capture one and skipped it. */
+function missingWalkthroughCard(capture: ListedCapture, boxes: number): HTMLElement {
+  const scope = scopeOf(capture)
+  return el(
+    'div',
+    { class: 'step-card alert' },
+    el('div', { class: 'card-head' }, icon('walk', 16), el('span', { class: 'grow card-title' }, 'Walkthrough'),
+      el('span', { class: 'pill bad' }, 'Missing')),
+    el('p', { class: 'grow-y' },
+      `The diagrams mark ${boxes} boxes changed or added, so this capture should have a walkthrough, and the run that drew it skipped it. Capturing the range again writes one.`),
+    scope && ibutton(['Capture again'], () => void requestCapture(scope), {
+      class: 'wide', title: BILLED, ...disabledWhileBusy()
+    })
+  )
+}
+
 function walkthroughCard(capture: ListedCapture): HTMLElement | false {
+  if (capture.walkthroughMissing) return missingWalkthroughCard(capture, capture.walkthroughMissing.boxes)
   if (!capture.walkthrough) return false
   const size = capture.walkthroughSize
   return el(
@@ -907,7 +933,12 @@ function captureCard(capture: ListedCapture, extra?: HTMLElement | false): HTMLE
     ),
     el('p', { class: 'small' }, capture.summary),
     el('p', { class: 'muted small' },
-      `${ago(capture.createdAt)} · ${capture.kind === 'review' ? 'no diagrams' : `${views} diagram${views === 1 ? '' : 's'}`} · ${capture.files.length} file${capture.files.length === 1 ? '' : 's'}${capture.walkthrough ? ' · walkthrough' : ''}${capture.review ? ` · review: ${findingsLabel(capture.review).toLowerCase()}` : ''}`),
+      `${ago(capture.createdAt)} · ${capture.kind === 'review' ? 'no diagrams' : `${views} diagram${views === 1 ? '' : 's'}`} · ${capture.files.length} file${capture.files.length === 1 ? '' : 's'}${capture.walkthrough ? ' · walkthrough' : ''}${capture.review ? ` · review: ${findingsLabel(capture.review).toLowerCase()}` : ''}`,
+      capture.walkthroughMissing && ' · ',
+      capture.walkthroughMissing && el('span', {
+        class: 'flag-bad',
+        title: `The diagrams mark ${capture.walkthroughMissing.boxes} boxes changed or added, so the skill owed this capture a walkthrough`
+      }, 'walkthrough missing')),
     extra
   )
   card.addEventListener('click', () => {

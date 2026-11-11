@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "title": "The socket reports where a result ends",
+  "kind": "modification",
+  "summary": "When asked, the client socket turns an option on and flags the result where it ends.",
+  "createdAt": "2026-11-11T08:20:00Z",
+  "base": "3333333333333333333333333333333333333333",
+  "commit": "1111111111111111111111111111111111111111",
+  "basis": "code reading of 333333333..111111111; tests not run; diagrams not looked at",
+  "files": [
+    {
+      "path": "lib/client/client_socket.dart",
+      "status": "modified"
+    },
+    {
+      "path": "test/client/client_socket_test.dart",
+      "status": "modified"
+    }
+  ],
+  "views": [
+    {
+      "role": "before",
+      "title": "Before",
+      "image": "before.svg",
+      "source": "before.d2",
+      "caption": "The option is off; no end flag."
+    },
+    {
+      "role": "after",
+      "title": "After",
+      "image": "after.svg",
+      "source": "after.d2",
+      "caption": "The option is on; results carry the end flag."
+    }
+  ]
+}

@@ -18,7 +18,7 @@ import {
   type CaptureView
 } from './captures.ts'
 import { buildScope, readHistory, runGit, type BriefScope } from './git.ts'
-import { cancelJob, dismissJob, enqueue, ensureIgnored, idlePrompt, jobLog, jobsDir, listJobs, pruneRuns, skillDir, startNext, JOBS_DIR } from './jobs.ts'
+import { cancelJob, dismissJob, enqueue, ensureIgnored, idlePrompt, jobLog, jobsDir, listJobs, pruneRuns, skillDir, startNext, JOBS_DIR, WALKTHROUGH_RULE } from './jobs.ts'
 import type { CaptureListing, CaptureScope, ListedCapture, ViewRef, WorkspaceInfo } from './protocol.ts'
 import { MAX_DIFF_ROWS, capRows, diffWindow, fileDiff, sliceFile } from './cite.ts'
 import { parseCite, parseWalkthrough, repoPath } from './walkthrough.ts'
@@ -26,6 +26,7 @@ import { MAX_NOTES, NOTES_FILE, newNote, notesJson, notesMarkdown, parseNotes, t
 import { REVIEW_FILE, parseReview, summarize } from './review.ts'
 import { findOpenPr, readPrContext, type PrContext as PrContextType, type PullRequest } from './pr.ts'
 import { CAPTURE_RULES_FILE, REVIEW_RULES_FILE, readProjectRules } from './rules.ts'
+import { WALKTHROUGH_AFTER_BOXES, capturedBoxes } from './boxes.ts'
 
 /** Answers are capped at 1 MiB and base64 grows a file by a third. */
 const MAX_IMAGE_BYTES = 700 * 1024
@@ -89,8 +90,22 @@ async function inside(parent: string, child: string): Promise<string> {
 
 const isMissing = (error: unknown) => (error as { code?: unknown } | null)?.code === 'ENOENT'
 
+/** How many boxes the capture's .d2 sources mark changed or added; a source it cannot read adds none. */
+async function countTouchedBoxes(capture: Capture, folder: string): Promise<number> {
+  const names = [...new Set(capture.views.flatMap((view) => (view.source ? [view.source] : [])))]
+  const sources = await Promise.all(names.map(async (name) => {
+    try {
+      return await readFile(await inside(folder, name), 'utf8')
+    } catch {
+      return ''
+    }
+  }))
+  return capturedBoxes(sources).length
+}
+
 /** The capture plus its review summary and walkthrough size, read from files beside it. A bad
- *  review file is reported; a bad walkthrough is left to the editor, which shows its error. */
+ *  review file is reported; a bad walkthrough is left to the editor, which shows its error. A
+ *  capture the skill owed a walkthrough and did not get one is flagged, so a skipped one shows. */
 async function withExtras(capture: Capture, folder: string): Promise<ListedCapture> {
   const listed: ListedCapture = capture
   const review = await readFile(resolve(folder, REVIEW_FILE), 'utf8').catch(() => null)
@@ -108,6 +123,9 @@ async function withExtras(capture: Capture, folder: string): Promise<ListedCaptu
     } catch {
       // The button still opens it, and the editor says what is wrong.
     }
+  } else if (capture.kind !== 'review') {
+    const boxes = await countTouchedBoxes(capture, folder)
+    if (boxes > WALKTHROUGH_AFTER_BOXES) listed.walkthroughMissing = { boxes }
   }
   return listed
 }
@@ -487,10 +505,10 @@ export default function activate(orca: OrcaWorkerApi): void {
           const brief = await buildScope(workspace.path, scope)
           const { captures } = await listCaptures(root)
           // A review-only capture holds no diagrams to check, so it is not handed to a capture run.
-          const existing = captures
-            .filter((capture) => capture.kind !== 'review' && capture.base === brief.capture.base && capture.commit === brief.capture.commit)
-            .map((capture) => capture.id)
-          return existing.length > 0 ? { ...brief, existing } : brief
+          const same = captures.filter((capture) => capture.kind !== 'review' && capture.base === brief.capture.base && capture.commit === brief.capture.commit)
+          if (same.length === 0) return brief
+          const missing = same.filter((capture) => capture.walkthroughMissing).map((capture) => capture.id)
+          return { ...brief, existing: same.map((capture) => capture.id), ...(missing.length > 0 ? { missingWalkthrough: missing } : {}) }
         },
         reviewFor: async (captureId) => {
           const { capture, folder } = await locateCapture(orca, captureId)
@@ -638,7 +656,7 @@ export default function activate(orca: OrcaWorkerApi): void {
         const projectRules = await readProjectRules(workspace.path, CAPTURE_RULES_FILE, 'HEAD')
         const content = {
           capturesDir: relative(workspace.path, root), skillDir: skillDir(), lookDir: relative(workspace.path, join(jobsDir(root), 'look')),
-          scopes: [brief], rules: [], ...(projectRules ? { projectRules } : {})
+          scopes: [brief], rules: [WALKTHROUGH_RULE], ...(projectRules ? { projectRules } : {})
         }
         await writeFile(path, JSON.stringify(content, null, 2))
         await orca.host.call('terminal.sendText', {
