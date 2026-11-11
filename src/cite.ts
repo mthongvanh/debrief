@@ -62,6 +62,34 @@ export function diffWindow(diff: string, from: number, to: number, pad = 2): Cit
   return rows
 }
 
+/** The most rows the whole-file diff view shows; a longer diff is cut. */
+export const MAX_DIFF_ROWS = 3000
+
+/**
+ * Every row of a unified diff of one file, numbered in the new file. A `gap` row stands for the
+ * unchanged lines a hunk skips: before the first hunk when it starts past line 1, and between hunks.
+ * A deleted file's rows are all `deleted`.
+ */
+export function fileDiff(diff: string): CiteRow[] {
+  const rows: CiteRow[] = []
+  let next: number | null = null
+  for (const line of diff.split('\n')) {
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line)
+    if (hunk) {
+      next = Number(hunk[1])
+      if (rows.length > 0 || next > 1) rows.push({ kind: 'gap', text: '' })
+      continue
+    }
+    // Lines before the first hunk are the diff's headers, `--- a/…` and `+++ b/…` among them.
+    if (next === null || line.startsWith('\\')) continue
+    const sign = line[0]
+    const text = line.slice(1)
+    if (sign === '-') rows.push({ kind: 'deleted', text })
+    else if (sign === '+' || sign === ' ') rows.push({ kind: sign === '+' ? 'added' : 'context', line: next++, text })
+  }
+  return rows
+}
+
 /** Cuts rows to MAX_CITE_LINES; `truncated` says whether anything was cut. */
 export function capRows(rows: CiteRow[]): { rows: CiteRow[]; truncated: boolean } {
   return rows.length > MAX_CITE_LINES

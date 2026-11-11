@@ -474,6 +474,15 @@ test('reads cited code from git at the capture commits, and figures from its fol
   assert.equal((await cite('a', 'diff')).from, two.slice(0, 9))
   await assert.rejects(cite('.env', 'after'), /\.env/)
 
+  const whole = await worker.request('code.diff', { captureId: 'cited', path: 'c' })
+  assert.deepEqual(whole.rows, [{ kind: 'added', line: 1, text: 'c' }])
+  assert.equal(whole.from, `${base.slice(0, 9)}..${two.slice(0, 9)}`)
+  assert.equal(whole.truncated, false)
+  // An unchanged file has an empty diff, not an error.
+  assert.deepEqual((await worker.request('code.diff', { captureId: 'cited', path: 'a' })).rows, [])
+  await assert.rejects(worker.request('code.diff', { captureId: 'cited', path: '.env' }), /\.env/)
+  await assert.rejects(worker.request('code.diff', { captureId: 'cited', path: '../outside' }))
+
   const figure = await worker.request('captures.asset', { captureId: 'cited', path: 'idea.svg' })
   assert.match(figure.url, /^data:image\/svg\+xml;base64,/)
   await assert.rejects(worker.request('captures.asset', { captureId: 'cited', path: 'capture.json' }), /Only images/)
@@ -547,4 +556,71 @@ test('finds the skill inside the plugin, and needs no install for an idle agent'
   assert.ok(readFileSync(join(jobs.skillDir(), 'SKILL.md'), 'utf8').startsWith('---\nname: debrief'))
   assert.equal(jobs.idlePrompt('b.json', true), '/debrief brief=b.json')
   assert.equal(jobs.idlePrompt('b.json', false), `Follow the instructions in ${join(jobs.skillDir(), 'SKILL.md')} with brief=b.json`)
+})
+
+test('keeps notes on a capture, hands them off by copy or a new claude, and never types into a running one', async () => {
+  const { path, base, two } = gitRepo()
+  const folder = join(path, '.context/debrief/noted')
+  mkdirSync(folder, { recursive: true })
+  writeFileSync(join(folder, 'capture.json'), JSON.stringify({ ...capture('2026-11-09T00:00:00Z'), base, commit: two }))
+  const mock = mockHost({
+    results: {
+      'workspace.readContext': { branch: 'feature/x', displayName: 'my-worktree', terminals: [] },
+      'workspace.list': { workspaces: [{ id: 'ws1', kind: 'worktree', name: 'my-worktree', path, branch: 'feature/x', hostId: 'local' }], truncated: false },
+      'agents.list': { agents: [{ terminalId: 't1', title: 'Claude', agent: 'claude', state: 'waiting', stateStartedAt: 0 }] },
+      'terminal.sendText': { accepted: true },
+      'agent.launch': { terminalId: 't7' }
+    }
+  })
+  const worker = await mount(main, { host: mock })
+  const add = (body: string) => worker.request('notes.add', { captureId: 'noted', note: { path: 'c', lines: [1, 1], body, quote: ['c'] } })
+  const { note: first } = await add('Name this better.')
+  await assert.rejects(worker.request('notes.add', { captureId: 'noted', note: { path: '.env', lines: [1, 1], body: 'x', quote: [] } }), /\.env/)
+  await assert.rejects(add(' '), /needs some text/)
+  const list = async () => (await worker.request('notes.list', { captureId: 'noted' })).notes
+
+  // A clipboard that refuses: nothing is marked, and the text comes back to copy by hand.
+  const write = main.clipboard.write
+  main.clipboard.write = async () => { throw new Error('pbcopy: no pasteboard') }
+  const refused = await worker.request('notes.copy', { captureId: 'noted' })
+  assert.deepEqual([refused.copied, refused.count, refused.error], [false, 1, 'pbcopy: no pasteboard'])
+  assert.match(refused.markdown, /Name this better/)
+  assert.equal((await list())[0].sentAt, undefined)
+  await assert.rejects(worker.request('clipboard.write', { text: 'x' }), /no pasteboard/)
+
+  // A clipboard that takes it: the brief is what was copied, and the note is marked copied.
+  let copied = ''
+  main.clipboard.write = async (text: string) => { copied = text }
+  try {
+    const answer = await worker.request('notes.copy', { captureId: 'noted' })
+    assert.deepEqual([answer.copied, answer.count], [true, 1])
+    assert.match(copied, /## 1\. `c` line 1\n\n```\nc\n```\n\nName this better\./)
+    assert.deepEqual((await list()).map((n) => n.sentVia), ['copy'])
+    await worker.request('clipboard.write', { text: 'review text' })
+    assert.equal(copied, 'review text')
+    await assert.rejects(worker.request('clipboard.write', { text: 42 as never }), /must be a string/)
+  } finally {
+    main.clipboard.write = write
+  }
+  await add('And test it.')
+
+  // A new Claude gets only what was not handed off yet, as a file it is told to read.
+  const launched = await worker.request('notes.launch', { captureId: 'noted' })
+  assert.deepEqual([launched.count, launched.terminalId], [1, 't7'])
+  const call = mock.callsOf('agent.launch')[0] as { workspaceId: string; agent: string; prompt: string }
+  assert.deepEqual([call.workspaceId, call.agent], ['ws1', 'claude'])
+  const file = /notes in (\S+) and/.exec(call.prompt)?.[1] ?? ''
+  assert.match(file, /^\.context\/debrief\/noted\/notes-.*\.md$/)
+  const sent = readFileSync(join(path, file), 'utf8')
+  assert.match(sent, /And test it\./)
+  assert.ok(!sent.includes('Name this better'), 'a copied note is not handed off twice')
+  assert.deepEqual((await list()).map((n) => n.sentVia), ['copy', 'claude'])
+  // The waiting Claude in the workspace is never typed into.
+  assert.equal(mock.callsOf('terminal.sendText').length, 0)
+  await assert.rejects(worker.request('notes.copy', { captureId: 'noted' }), /already handed off/)
+  await assert.rejects(worker.request('notes.launch', { captureId: 'noted' }), /already handed off/)
+
+  await worker.request('notes.remove', { captureId: 'noted', id: first.id })
+  assert.equal((await list()).length, 1)
+  await worker.deactivate()
 })

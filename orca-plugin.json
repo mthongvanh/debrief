@@ -127,6 +127,9 @@
       "kind": "terminal:send"
     },
     {
+      "kind": "agent:launch"
+    },
+    {
       "kind": "settings:own"
     }
   ]

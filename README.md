@@ -20,6 +20,25 @@ panel:
 
   A walkthrough names line ranges and the worker reads the code from git at the capture's
   commits, so cited code always matches what was drawn.
+
+  Each cited block, in a walkthrough or a review, has two buttons. **±** shows the whole
+  file's diff across the capture's range in a dialog, scrolled to the cited lines with them
+  marked (`Esc` closes it). **Open** opens the file in an Orca editor tab as it is now. Orca
+  doesn't let a plugin open its own diff view or jump to a line, so the diff is drawn by
+  Debrief and Open lands at the top of the file.
+- **Notes for the agent:** in the diff dialog, click a line number to leave a note on that line,
+  or shift-click another to note a range (`⌘↩` saves, `Esc` cancels). Notes show under their
+  lines, and the **±** button counts the notes on its file. When you're done, hand off every
+  note not handed off yet, in every file of the capture, each under the code it quotes:
+  - **Copy notes** puts them on the clipboard as Markdown, to paste into an agent yourself.
+  - **Start Claude with notes** writes them to `notes-<time>.md` in the capture folder and
+    starts a new Claude in a terminal tab of the workspace, asked to read the file and work
+    through it.
+
+  Debrief never types into an agent that is already running. Notes are kept in the capture's
+  `notes.json`, with whether each was copied or given to Claude. A note sits on lines as they
+  read after the change, so removed lines can't take one. Orca's own diff notes are not
+  reachable from a plugin, so these are separate from them.
 - **Code review:** Review code (on a capture in the sidebar, or in its walkthrough) queues a
   background run that reviews the capture's change for bugs: logic, async, state, error
   handling and broken callers, not style. It checks each finding by tracing the code from an

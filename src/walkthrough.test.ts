@@ -1,6 +1,6 @@
 import { assert, test } from 'orca/testing'
 import { parseCapture } from './captures.ts'
-import { MAX_CITE_LINES, capRows, diffWindow, sliceFile } from './cite.ts'
+import { MAX_CITE_LINES, capRows, diffWindow, fileDiff, sliceFile } from './cite.ts'
 import { LIMITS, d2IdOf, edgeEnds, isEnvFile, litIds, parseWalkthrough } from './walkthrough.ts'
 
 const valid = {
@@ -117,6 +117,22 @@ test('marks a jump between hunks as a gap', () => {
   const rows = diffWindow(DIFF, 14, 43, 0)
   assert.deepEqual(rows.map((r) => r.kind), ['context', 'context', 'context', 'gap', 'context', 'added'])
   assert.deepEqual(rows.map((r) => r.line ?? null), [14, 15, 16, null, 42, 43])
+})
+
+test('lays out a whole file\'s diff with a gap before and between hunks', () => {
+  const rows = fileDiff(['diff --git a/a.dart b/a.dart', '--- a/a.dart', '+++ b/a.dart', DIFF].join('\n'))
+  assert.deepEqual(rows.map((r) => [r.kind, r.line ?? null]), [
+    ['gap', null],
+    ['context', 10], ['deleted', null], ['added', 11], ['added', 12], ['added', 13], ['context', 14], ['context', 15], ['context', 16],
+    ['gap', null],
+    ['context', 42], ['added', 43], ['context', 44]
+  ])
+})
+
+test('a new file has no leading gap, and a deleted one is all deleted rows', () => {
+  assert.deepEqual(fileDiff('@@ -0,0 +1,2 @@\n+a\n+b').map((r) => [r.kind, r.line]), [['added', 1], ['added', 2]])
+  assert.deepEqual(fileDiff('@@ -1,2 +0,0 @@\n-a\n-b').map((r) => r.kind), ['deleted', 'deleted'])
+  assert.deepEqual(fileDiff(''), [])
 })
 
 test('slices a file and caps long citations', () => {

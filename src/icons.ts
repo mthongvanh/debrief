@@ -17,6 +17,7 @@ const ICONS = {
   down: '<path d="M6 9l6 6 6-6"/>',
   external: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   code: '<path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/>',
+  diff: '<path d="M12 4v8M8 8h8M8 18h8"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.5"/>',
   chevron: '<path d="M9 6l6 6-6 6"/>',
   quote: '<path fill="currentColor" stroke="none" d="M4 11.5C4 8 6 5.5 9.5 5v2.6C8 8.1 7.2 9.2 7.1 11H10v7H4zm10 0c0-3.5 2-6 5.5-6.5v2.6c-1.5.5-2.3 1.6-2.4 3.4H20v7h-6z"/>'

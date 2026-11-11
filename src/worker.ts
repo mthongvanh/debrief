@@ -4,6 +4,8 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { writeClipboard } from './clipboard.ts'
 import type { OrcaWorkerApi } from 'orca/worker'
 import {
   CaptureError,
@@ -18,8 +20,9 @@ import {
 import { buildScope, readHistory, runGit, type BriefScope } from './git.ts'
 import { cancelJob, dismissJob, enqueue, ensureIgnored, idlePrompt, jobLog, jobsDir, listJobs, pruneRuns, skillDir, startNext, JOBS_DIR } from './jobs.ts'
 import type { CaptureListing, CaptureScope, ListedCapture, ViewRef, WorkspaceInfo } from './protocol.ts'
-import { capRows, diffWindow, sliceFile } from './cite.ts'
+import { MAX_DIFF_ROWS, capRows, diffWindow, fileDiff, sliceFile } from './cite.ts'
 import { parseCite, parseWalkthrough, repoPath } from './walkthrough.ts'
+import { MAX_NOTES, NOTES_FILE, newNote, notesJson, notesMarkdown, parseNotes, type Note, type SentVia } from './notes.ts'
 import { REVIEW_FILE, parseReview, summarize } from './review.ts'
 import { findOpenPr, readPrContext, type PrContext as PrContextType, type PullRequest } from './pr.ts'
 import { CAPTURE_RULES_FILE, REVIEW_RULES_FILE, readProjectRules } from './rules.ts'
@@ -155,6 +158,53 @@ async function openInEditor(orca: OrcaWorkerApi, workspace: WorkspaceInfo, file:
   return { opened: true as const }
 }
 
+/**
+ * The commits a capture's code is read from: `base` and `after`, or `base` and the working tree
+ * when the capture was drawn from uncommitted work. `label` names the after side.
+ */
+function captureRange(capture: { base?: string; commit?: string }): { base: string; after: string; dirty: boolean; label: string } {
+  const sha = /^[0-9a-f]{7,40}$/
+  const base = (capture.base ?? '').toLowerCase()
+  const commit = (capture.commit ?? '').toLowerCase()
+  const dirty = commit.endsWith('+dirty')
+  const after = commit.replace(/\+dirty$/, '')
+  if (!sha.test(base) || !sha.test(after)) throw codedError('unavailable', 'The capture has no base and commit to read code from')
+  return { base, after, dirty, label: dirty ? 'working tree' : after.slice(0, 9) }
+}
+
+async function readNotes(folder: string): Promise<Note[]> {
+  try {
+    return parseNotes(await readFile(join(folder, NOTES_FILE), 'utf8'))
+  } catch (error) {
+    if (isMissing(error)) return []
+    throw error
+  }
+}
+
+/** Writes to one capture's notes, one change at a time, so two quick saves never lose one. */
+const noteWrites = new Map<string, Promise<unknown>>()
+function changeNotes(folder: string, change: (notes: Note[]) => Note[]): Promise<void> {
+  const run = (noteWrites.get(folder) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(async () => writeFile(join(folder, NOTES_FILE), notesJson(change(await readNotes(folder)))))
+  noteWrites.set(folder, run)
+  void run.finally(() => { if (noteWrites.get(folder) === run) noteWrites.delete(folder) }).catch(() => undefined)
+  return run
+}
+
+const MAX_CLIPBOARD_CHARS = 2_000_000
+
+/** Writes the system clipboard; tests swap `write` so they never touch the real one. */
+export const clipboard = { write: writeClipboard }
+
+/** Marks notes handed off now, by `via`; ids that are not notes are ignored. */
+function markSent(folder: string, ids: unknown, via: SentVia): Promise<void> {
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string')) throw codedError('invalid_params', 'ids must be a list of note ids')
+  const marked = new Set(ids as string[])
+  const sentAt = new Date().toISOString()
+  return changeNotes(folder, (notes) => notes.map((note) => (marked.has(note.id) && !note.sentAt ? { ...note, sentAt, sentVia: via } : note)))
+}
+
 async function locateView(orca: OrcaWorkerApi, ref: ViewRef): Promise<Located> {
   const { workspace, folder, capture } = await locateCapture(orca, ref.captureId)
   const view = capture.views[ref.view]
@@ -288,17 +338,11 @@ export default function activate(orca: OrcaWorkerApi): void {
     } catch (error) {
       throw codedError('invalid_params', (error as Error).message)
     }
-    const sha = /^[0-9a-f]{7,40}$/
-    const base = (capture.base ?? '').toLowerCase()
-    const commit = (capture.commit ?? '').toLowerCase()
-    const dirty = commit.endsWith('+dirty')
-    const after = commit.replace(/\+dirty$/, '')
-    if (!sha.test(base) || !sha.test(after)) throw codedError('unavailable', 'The capture has no base and commit to read code from')
+    const { base, after, dirty, label } = captureRange(capture)
     const [from, to] = cite.lines
     const git = (args: string[]) => runGit(workspace.path, args)
     const afterText = async () =>
       dirty ? readFile(await inside(workspace.path, cite.path), 'utf8') : git(['show', `${after}:${cite.path}`])
-    const label = dirty ? 'working tree' : after.slice(0, 9)
     try {
       if (cite.show === 'before') {
         return { ...capRows(sliceFile(await git(['show', `${base}:${cite.path}`]), from, to)), from: base.slice(0, 9) }
@@ -317,6 +361,98 @@ export default function activate(orca: OrcaWorkerApi): void {
       }
       throw error
     }
+  })
+
+  orca.panels.handle('code.diff', async ({ captureId, path: raw }) => {
+    const { workspace, capture } = await locateCapture(orca, captureId)
+    let path
+    try {
+      path = repoPath(raw, 'path')
+    } catch (error) {
+      throw codedError('invalid_params', (error as Error).message)
+    }
+    const { base, after, dirty, label } = captureRange(capture)
+    // --no-renames keeps a moved file's diff about this path alone.
+    const diff = await runGit(workspace.path, ['diff', '--no-renames', '-U5', base, ...(dirty ? [] : [after]), '--', path])
+    if (/^Binary files /m.test(diff)) throw codedError('invalid_params', `${path} is a binary file, so there are no lines to show`)
+    const rows = fileDiff(diff)
+    return {
+      rows: rows.slice(0, MAX_DIFF_ROWS),
+      truncated: rows.length > MAX_DIFF_ROWS,
+      from: `${base.slice(0, 9)}..${label}`
+    }
+  })
+
+  orca.panels.handle('notes.list', async ({ captureId }) => {
+    const { folder } = await locateCapture(orca, captureId)
+    return { notes: await readNotes(folder) }
+  })
+
+  orca.panels.handle('notes.add', async ({ captureId, note: raw }) => {
+    const { folder } = await locateCapture(orca, captureId)
+    let note: Note
+    try {
+      note = newNote(raw, randomUUID(), new Date())
+    } catch (error) {
+      throw codedError('invalid_params', (error as Error).message)
+    }
+    await changeNotes(folder, (notes) => {
+      if (notes.length >= MAX_NOTES) throw codedError('too_large', `A capture holds at most ${MAX_NOTES} notes`)
+      return [...notes, note]
+    })
+    return { note }
+  })
+
+  orca.panels.handle('notes.remove', async ({ captureId, id }) => {
+    const { folder } = await locateCapture(orca, captureId)
+    await changeNotes(folder, (notes) => notes.filter((note) => note.id !== id))
+    return { ok: true as const }
+  })
+
+  orca.panels.handle('clipboard.write', async ({ text }) => {
+    if (typeof text !== 'string' || text.length > MAX_CLIPBOARD_CHARS) throw codedError('invalid_params', 'text must be a string of at most 2 MB')
+    try {
+      await clipboard.write(text)
+    } catch (error) {
+      throw codedError('unavailable', (error as Error).message)
+    }
+    return { ok: true as const }
+  })
+
+  /**
+   * Copies the notes not handed off yet as Markdown and marks them copied. When the clipboard
+   * cannot be written, `copied` is false, nothing is marked, and `markdown` is there to copy by hand.
+   */
+  orca.panels.handle('notes.copy', async ({ captureId }) => {
+    const { folder, capture } = await locateCapture(orca, captureId)
+    const unsent = (await readNotes(folder)).filter((note) => !note.sentAt)
+    if (unsent.length === 0) throw codedError('invalid_params', 'Every note was already handed off')
+    const markdown = notesMarkdown(capture, unsent)
+    try {
+      await clipboard.write(markdown)
+    } catch (error) {
+      return { copied: false, count: unsent.length, markdown, error: (error as Error).message }
+    }
+    await markSent(folder, unsent.map((note) => note.id), 'copy')
+    return { copied: true, count: unsent.length, markdown }
+  })
+
+  orca.panels.handle('notes.launch', async ({ captureId }) => {
+    const { workspace, folder, capture } = await locateCapture(orca, captureId)
+    const unsent = (await readNotes(folder)).filter((note) => !note.sentAt)
+    if (unsent.length === 0) throw codedError('invalid_params', 'Every note was already handed off')
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const file = join(folder, `notes-${stamp}.md`)
+    await writeFile(file, notesMarkdown(capture, unsent))
+    // The capture folder is a real path, so the workspace's must be too, or the path climbs out.
+    const path = relative(await realpath(workspace.path), file).split(sep).join('/')
+    const { terminalId } = await orca.host.call('agent.launch', {
+      workspaceId: workspace.id,
+      agent: 'claude',
+      prompt: `Read the review notes in ${path} and work through each one.`
+    })
+    await markSent(folder, unsent.map((note) => note.id), 'claude')
+    return { count: unsent.length, terminalId }
   })
 
   orca.panels.handle('git.pr', async () => {

@@ -1,6 +1,7 @@
 // The panel <-> worker contract, declared once: src/panel.ts and src/worker.ts both read it.
 import type { Capture } from './captures.ts'
 import type { Cite, CiteRow } from './cite.ts'
+import type { Note, NoteInput } from './notes.ts'
 import type { ReviewSummary } from './review.ts'
 import type { PullRequest } from './pr.ts'
 
@@ -92,6 +93,29 @@ declare module 'orca' {
       input: { captureId: string; cite: Cite }
       output: { rows: CiteRow[]; truncated: boolean; from: string }
     }
+    /** Every hunk of one file's change across the capture's range, for the whole-diff view. */
+    'code.diff': {
+      input: { captureId: string; path: string }
+      output: { rows: CiteRow[]; truncated: boolean; from: string }
+    }
+    /** The notes left for the agent on the capture's diff, oldest first. */
+    'notes.list': { input: { captureId: string }; output: { notes: Note[] } }
+    /** Saves a note on lines of one file, numbered as they read after the change. */
+    'notes.add': { input: { captureId: string; note: NoteInput }; output: { note: Note } }
+    'notes.remove': { input: { captureId: string; id: string }; output: { ok: true } }
+    /**
+     * Copies the notes not handed off yet as Markdown, through the worker, and marks them copied.
+     * When the clipboard cannot be written, `copied` is false, nothing is marked, and `markdown`
+     * is the text to copy by hand.
+     */
+    'notes.copy': { input: { captureId: string }; output: { copied: boolean; count: number; markdown: string; error?: string } }
+    /** Puts text on the system clipboard from the worker: the editor's isolated frame cannot. */
+    'clipboard.write': { input: { text: string }; output: { ok: true } }
+    /**
+     * Writes the notes not handed off yet to a Markdown file in the capture folder and starts a new
+     * Claude in a terminal of the workspace, asked to read it; never types into a running agent.
+     */
+    'notes.launch': { input: { captureId: string }; output: { count: number; terminalId: string } }
     /** An image inside a capture folder, such as a walkthrough figure, as a data: URL. */
     'captures.asset': { input: { captureId: string; path: string }; output: { url: string; bytes: number } }
     /** Opens a file of the focused workspace in an editor tab: a walkthrough's code links. */

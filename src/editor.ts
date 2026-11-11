@@ -7,6 +7,7 @@ import type { Job, ListedCapture } from './protocol.ts'
 import { isReviewText, parseReview, reviewMarkdown, type Finding, type Review } from './review.ts'
 import { parseWalkthrough, d2IdOf, litIds, type Decision, type Figure, type Walkthrough, type WalkthroughStep } from './walkthrough.ts'
 import { icon, type IconName } from './icons.ts'
+import type { Note } from './notes.ts'
 import { LEGEND_CSS, LEGEND_LABEL, removeLegend, trimToContent, type LegendKey } from './legend.ts'
 
 const STYLE = `
@@ -69,6 +70,50 @@ button.ghost { background: transparent; border-color: transparent; padding: 2px 
 .code .fold { display: block; width: 100%; border: 0; border-top: 1px solid var(--orca-border); border-radius: 0; padding: 8px; background: var(--orca-card, transparent); color: var(--orca-muted-foreground); font-size: 12.5px; }
 .code .note { padding: 8px 14px 10px; border-top: 1px solid var(--orca-border); font-size: 12.5px; color: var(--orca-muted-foreground); }
 .code .msg { padding: 10px 14px; font-size: 12.5px; color: var(--orca-muted-foreground); }
+.code-head .actions-end { display: flex; gap: 2px; }
+dialog.diff-view {
+  width: min(1100px, calc(100vw - 48px)); max-width: none; max-height: calc(100vh - 48px); padding: 0; border: 0;
+  background: transparent; color: inherit; overflow: visible;
+}
+dialog.diff-view::backdrop { background: rgb(0 0 0 / .45); }
+dialog.diff-view .code { display: flex; flex-direction: column; max-height: calc(100vh - 48px); box-shadow: 0 12px 40px rgb(0 0 0 / .3); }
+dialog.diff-view .code-head .file { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+dialog.diff-view .scroll { flex: 1; min-height: 0; overflow: auto; }
+.row.cited { box-shadow: inset 3px 0 0 var(--orca-primary); }
+.row.cited.context { background: color-mix(in srgb, var(--orca-primary) 10%, transparent); }
+.diff-view .row[data-line] { cursor: pointer; }
+.diff-view .row[data-line]:hover .ln { color: var(--orca-foreground); text-decoration: underline; }
+.diff-view .row.picked { background: color-mix(in srgb, var(--orca-primary) 22%, transparent); }
+.diff-view .row.noted .ln { color: var(--orca-primary); font-weight: 600; }
+.diff-view .send-slot:empty { display: none; }
+.diff-view .send-slot { display: flex; gap: 6px; }
+.diff-view .small-btn { padding: 3px 10px; font-size: 12px; white-space: nowrap; }
+.diff-view .note-bar { display: flex; flex-direction: column; gap: 6px; padding: 6px 14px; border-bottom: 1px solid var(--orca-border); font-size: 12px; color: var(--orca-muted-foreground); background: var(--orca-card, transparent); }
+.diff-view .note-bar .markdown { margin-top: 0; min-height: 120px; }
+.note-card, .composer, .note-group {
+  margin: 6px 14px 10px 68px; padding: 8px 12px; border: 1px solid var(--orca-border); border-radius: 8px;
+  background: var(--orca-card, var(--orca-background)); font: 13px/1.5 system-ui, sans-serif; white-space: normal; color: var(--orca-foreground);
+}
+.note-card { border-left: 3px solid var(--orca-primary); }
+.note-card.sent { border-left-color: var(--orca-border); }
+.note-card.sent .note-body { color: var(--orca-muted-foreground); }
+.note-group { border-style: dashed; }
+.note-group .note-card { margin: 8px 0 0; }
+.note-meta { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--orca-muted-foreground); margin-bottom: 4px; }
+.note-meta .grow, .composer-actions .grow { flex: 1; }
+.note-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.icon-btn.tiny { width: 22px; height: 22px; }
+.composer textarea {
+  display: block; width: 100%; min-height: 64px; resize: vertical; padding: 6px 8px; font: 13px/1.5 system-ui, sans-serif;
+  color: var(--orca-foreground); background: var(--orca-background); border: 1px solid var(--orca-border); border-radius: 6px;
+}
+.composer textarea:focus-visible { outline: 2px solid var(--orca-ring); outline-offset: 0; }
+.composer-actions { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.icon-btn.counted { position: relative; color: var(--orca-primary); }
+.count-badge {
+  position: absolute; top: 1px; right: 0; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px;
+  font: 600 9.5px/14px system-ui, sans-serif; background: var(--orca-primary); color: var(--orca-primary-foreground);
+}
 .tk-k { color: var(--debrief-keyword); } .tk-s { color: var(--debrief-string); } .tk-n { color: var(--debrief-number); }
 .tk-t { color: var(--debrief-type); } .tk-c { color: var(--debrief-comment); font-style: italic; }
 
@@ -308,12 +353,15 @@ const state = {
   /** Narrow layout: the step diagram shows in full instead of as a strip. */
   diagramOpen: false,
   /** The review as Markdown, shown to copy by hand when the clipboard refused it. */
-  markdown: null as string | null
+  markdown: null as string | null,
+  /** Notes left for the agent on the capture's diff. */
+  notes: [] as Note[]
 }
 type CiteAnswer = { rows: CiteRow[]; truncated: boolean; from: string }
 type Picture = { node: Node; keys: LegendKey[] }
 const pictures = new Map<string, Promise<Picture>>()
 const cites = new Map<string, Promise<CiteAnswer>>()
+const diffs = new Map<string, Promise<CiteAnswer>>()
 const app = el('div', { id: 'app' })
 
 /** A cited block longer than this folds after FOLD_AT lines. */
@@ -356,11 +404,306 @@ function readCite(captureId: string, cite: Cite): Promise<CiteAnswer> {
   return pending
 }
 
+function readDiff(captureId: string, path: string): Promise<CiteAnswer> {
+  const key = JSON.stringify([captureId, path])
+  const cached = diffs.get(key)
+  if (cached) return cached
+  const pending = orca.plugin.request('code.diff', { captureId, path })
+  pending.catch(() => diffs.delete(key))
+  diffs.set(key, pending)
+  return pending
+}
+
+/** Repaints the open diff dialog after its notes changed elsewhere; null when none is open. */
+let repaintDiff: (() => void) | null = null
+
+const lineSpan = ([from, to]: [number, number]) => (from === to ? `line ${from}` : `lines ${from}–${to}`)
+
+/**
+ * The whole diff of the cited file across the capture's range, in a dialog over the page, scrolled
+ * to the cited lines and marked. A click on a numbered line (shift-click for a range) opens a box
+ * for a note to the agent; notes show under their lines. Copy puts every note not handed off yet
+ * on the clipboard as Markdown; Start Claude opens a new Claude on them. Neither types into a
+ * running agent. Esc drops an open note box first, then the dialog.
+ * It lives outside #app, so the page re-rendering underneath leaves it open.
+ */
+function openDiff(cite: Cite): void {
+  const capture = state.capture
+  if (!capture) return
+  document.querySelector('dialog.diff-view')?.remove()
+  const marks = cite.show !== 'before'
+  const view = {
+    answer: null as CiteAnswer | null,
+    anchor: null as number | null,
+    pick: null as [number, number] | null,
+    draft: '',
+    busy: false,
+    status: '',
+    /** The notes as Markdown, shown to copy by hand when the clipboard refused them. */
+    markdown: null as string | null
+  }
+  const inCite = (row: CiteRow) => marks && row.line !== undefined && row.line >= cite.lines[0] && row.line <= cite.lines[1]
+  const range = el('span', { class: 'grow muted' }, 'Reading the diff...')
+  const send = el('span', { class: 'send-slot' })
+  const bar = el('div', { class: 'note-bar' })
+  const body = el('div', { class: 'scroll' }, el('div', { class: 'msg' }, 'Reading the diff...'))
+  const dialog = el('dialog', { class: 'diff-view', 'aria-label': `Diff of ${cite.path}` },
+    el('div', { class: 'code' },
+      el('div', { class: 'code-head', title: cite.path },
+        el('span', { class: 'file mono' }, cite.path), range, send,
+        el('span', { class: 'actions-end' },
+          iconButton('external', `Open ${cite.path}`, () => { dialog.close(); openFile(cite.path) }, { class: 'icon-btn bare' }),
+          iconButton('cross', 'Close', () => dialog.close(), { class: 'icon-btn bare', autofocus: '' }))),
+      bar,
+      body))
+  dialog.addEventListener('close', () => { dialog.remove(); repaintDiff = null })
+  // Esc drops a note being written before it closes the dialog.
+  dialog.addEventListener('cancel', (event) => {
+    if (!view.pick) return
+    event.preventDefault()
+    view.pick = null
+    view.anchor = null
+    paint()
+  })
+  // A click on the backdrop lands on the dialog itself, outside its box.
+  dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close() })
+
+  const fileNotes = () => state.notes.filter((note) => note.path === cite.path)
+
+  function paintBar(): void {
+    const unsent = state.notes.filter((note) => !note.sentAt).length
+    const n = `${unsent} note${unsent === 1 ? '' : 's'}`
+    const idle: Record<string, string> = view.busy ? { disabled: '' } : {}
+    send.replaceChildren(...(unsent > 0
+      ? [
+          button([`Copy ${n}`], () => void copyNotes(), {
+            class: 'small-btn', title: 'Copies every note not handed off yet, in every file, as Markdown to paste into an agent', ...idle }),
+          button([`Start Claude with ${n}`], () => void launchClaude(), {
+            class: 'primary small-btn', title: 'Starts a new Claude in a terminal of this workspace and asks it to work through every note not handed off yet', ...idle })
+        ]
+      : []))
+    bar.replaceChildren(
+      el('span', {}, view.status || 'Click a line number to leave a note for the agent. Shift-click picks a range.'),
+      view.markdown ? markdownArea(view.markdown) : '')
+  }
+
+  function quoteOf(pick: [number, number]): string[] {
+    return (view.answer?.rows ?? []).filter((row) => row.kind !== 'deleted' && row.line !== undefined && row.line >= pick[0] && row.line <= pick[1]).map((row) => row.text)
+  }
+
+  async function addNote(text: string): Promise<void> {
+    const pick = view.pick
+    if (!capture || !pick || text.trim() === '' || view.busy) return
+    view.busy = true
+    paintBar()
+    try {
+      const { note } = await orca.plugin.request('notes.add', {
+        captureId: capture.id,
+        note: { path: cite.path, lines: pick, body: text, quote: quoteOf(pick) }
+      })
+      state.notes = [...state.notes.filter((n) => n.id !== note.id), note]
+      view.pick = null
+      view.anchor = null
+      view.draft = ''
+      view.status = `Saved a note on ${lineSpan(note.lines)}. Copy it, or start Claude with it, when you're done.`
+    } catch (error) {
+      view.status = `Could not save the note: ${describe(error)}`
+    }
+    view.busy = false
+    paint()
+    render()
+  }
+
+  async function removeNote(id: string): Promise<void> {
+    if (!capture) return
+    try {
+      await orca.plugin.request('notes.remove', { captureId: capture.id, id })
+      state.notes = state.notes.filter((note) => note.id !== id)
+      view.status = 'Removed the note.'
+    } catch (error) {
+      view.status = `Could not remove the note: ${describe(error)}`
+    }
+    paint()
+    render()
+  }
+
+  const handed = (count: number) => (count === 1 ? 'the note' : `the ${count} notes`)
+
+  async function copyNotes(): Promise<void> {
+    if (!capture || view.busy) return
+    view.busy = true
+    view.markdown = null
+    paintBar()
+    try {
+      const answer = await orca.plugin.request('notes.copy', { captureId: capture.id })
+      if (answer.copied) {
+        await loadNotes()
+        view.status = `Copied ${handed(answer.count)} as Markdown: paste into an agent.`
+      } else {
+        view.status = `Could not write the clipboard (${answer.error ?? 'no reason given'}): copy ${handed(answer.count)} below.`
+        view.markdown = answer.markdown
+      }
+    } catch (error) {
+      view.status = `Could not copy the notes: ${describe(error)}`
+    }
+    view.busy = false
+    paint()
+    render()
+  }
+
+  async function launchClaude(): Promise<void> {
+    if (!capture || view.busy) return
+    view.busy = true
+    view.markdown = null
+    view.status = 'Starting Claude...'
+    paintBar()
+    try {
+      const { count } = await orca.plugin.request('notes.launch', { captureId: capture.id })
+      await loadNotes()
+      view.status = `Started a new Claude in a terminal tab of this workspace with ${handed(count)}.`
+    } catch (error) {
+      view.status = `Could not start Claude: ${describe(error)}`
+    }
+    view.busy = false
+    paint()
+    render()
+  }
+
+  function noteCard(note: Note): HTMLElement {
+    return el('div', { class: `note-card${note.sentAt ? ' sent' : ''}` },
+      el('div', { class: 'note-meta' },
+        el('span', {}, lineSpan(note.lines)),
+        el('span', { class: 'pill' }, !note.sentAt ? 'not handed off yet' : `${note.sentVia === 'claude' ? 'given to Claude' : note.sentVia === 'copy' ? 'copied' : 'sent'} ${ago(note.sentAt)}`),
+        el('span', { class: 'grow' }),
+        iconButton('cross', 'Remove this note', () => void removeNote(note.id), { class: 'icon-btn bare tiny' })),
+      el('div', { class: 'note-body' }, note.body))
+  }
+
+  function composer(pick: [number, number]): HTMLElement {
+    const area = el('textarea', { 'aria-label': `Note for the agent on ${lineSpan(pick)}`, placeholder: 'What should the agent change or explain here?', rows: '3' })
+    area.value = view.draft
+    area.addEventListener('input', () => { view.draft = area.value })
+    area.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        void addNote(area.value)
+      }
+    })
+    requestAnimationFrame(() => area.focus())
+    return el('div', { class: 'composer' },
+      el('div', { class: 'note-meta' }, el('span', {}, `Note for the agent on ${lineSpan(pick)}`)),
+      area,
+      el('div', { class: 'composer-actions' },
+        el('span', { class: 'muted small grow' }, '⌘↩ saves · Esc cancels'),
+        button(['Cancel'], () => { view.pick = null; view.anchor = null; paint() }, { class: 'ghost' }),
+        button(['Add note'], () => void addNote(area.value), { class: 'primary', ...(view.busy ? { disabled: '' } : {}) })))
+  }
+
+  function pickLine(line: number, extend: boolean): void {
+    if (extend && view.anchor !== null) {
+      view.pick = [Math.min(view.anchor, line), Math.max(view.anchor, line)]
+    } else {
+      view.anchor = line
+      view.pick = [line, line]
+    }
+    paint()
+  }
+
+  function paint(): void {
+    paintBar()
+    const answer = view.answer
+    if (!answer) return
+    if (answer.rows.length === 0) {
+      body.replaceChildren(el('div', { class: 'msg' }, `${cite.path} did not change in ${answer.from}.`))
+      return
+    }
+    const notes = fileNotes()
+    const shown = new Set(answer.rows.flatMap((row) => (row.line === undefined ? [] : [row.line])))
+    const after = new Map<number, Note[]>()
+    const unplaced: Note[] = []
+    for (const note of notes) {
+      if (shown.has(note.lines[1])) after.set(note.lines[1], [...(after.get(note.lines[1]) ?? []), note])
+      else unplaced.push(note)
+    }
+    const pick = view.pick
+    const noted = (line: number) => notes.some((note) => line >= note.lines[0] && line <= note.lines[1])
+    const out: Node[] = []
+    if (unplaced.length > 0) {
+      out.push(el('div', { class: 'note-group' }, el('div', { class: 'label' }, 'Notes on lines this diff does not show'), ...unplaced.map(noteCard)))
+    }
+    for (const row of answer.rows) {
+      const node = codeRow(row)
+      if (inCite(row)) node.classList.add('cited')
+      const line = row.line
+      if (line !== undefined && row.kind !== 'deleted') {
+        node.dataset.line = String(line)
+        node.title = 'Click to leave a note for the agent; shift-click picks a range'
+        if (pick && line >= pick[0] && line <= pick[1]) node.classList.add('picked')
+        if (noted(line)) node.classList.add('noted')
+      }
+      out.push(node)
+      if (line !== undefined && row.kind !== 'deleted') {
+        for (const note of after.get(line) ?? []) out.push(noteCard(note))
+        if (pick && line === pick[1]) out.push(composer(pick))
+      }
+    }
+    if (answer.truncated) out.push(el('div', { class: 'row gap' }, el('span', { class: 'ln' }), el('span', { class: 'sg' }, '⋯'), el('code', {}, 'cut here')))
+    const top = body.scrollTop
+    const pre = el('pre', {}, ...out)
+    pre.addEventListener('click', (event) => {
+      const target = event.target as Element
+      // Clicks inside a note or the note box are theirs, not a line pick.
+      if (target.closest('.note-card, .composer, .note-group')) return
+      const row = target.closest<HTMLElement>('.row[data-line]')
+      if (row) pickLine(Number(row.dataset.line), event.shiftKey)
+    })
+    body.replaceChildren(pre)
+    body.scrollTop = top
+  }
+
+  repaintDiff = () => { if (!view.pick) paint() }
+  document.body.append(dialog)
+  dialog.showModal()
+  paintBar()
+
+  readDiff(capture.id, cite.path).then(
+    (answer) => {
+      view.answer = answer
+      range.textContent = `${marks ? `lines ${cite.lines[0]}–${cite.lines[1]} marked · ` : ''}${answer.from}`
+      paint()
+      const first = body.querySelector('.row.cited')
+      if (first) first.scrollIntoView({ block: 'center' })
+      else if (marks && answer.rows.length > 0) range.textContent = `lines ${cite.lines[0]}–${cite.lines[1]} unchanged · ${answer.from}`
+    },
+    (error) => { body.replaceChildren(el('div', { class: 'msg' }, describe(error))) }
+  )
+}
+
+/** Text in a box, selected, to copy by hand. */
+function markdownArea(text: string): HTMLTextAreaElement {
+  const area = document.createElement('textarea')
+  area.className = 'markdown'
+  area.value = text
+  area.setAttribute('readonly', '')
+  area.setAttribute('aria-label', 'The notes as Markdown')
+  requestAnimationFrame(() => area.select())
+  return area
+}
+
 function codeRow(row: CiteRow): HTMLElement {
   return el('div', { class: `row ${row.kind}` },
     el('span', { class: 'ln' }, row.kind === 'gap' ? '' : String(row.line ?? '')),
     el('span', { class: 'sg' }, row.kind === 'added' ? '+' : row.kind === 'deleted' ? '−' : row.kind === 'gap' ? '⋯' : ''),
     el('code', {}, ...highlight(row.text)))
+}
+
+/** Opens the whole diff, where notes for the agent are left; it counts the notes on this file. */
+function diffButton(cite: Cite): HTMLButtonElement {
+  const count = state.notes.filter((note) => note.path === cite.path).length
+  const label = `Show the whole diff of ${cite.path} and leave notes for the agent${count > 0 ? ` (${count} note${count === 1 ? '' : 's'})` : ''}`
+  const node = iconButton('diff', label, () => openDiff(cite), { class: `icon-btn bare${count > 0 ? ' counted' : ''}`, ...(state.capture ? {} : { disabled: '' }) })
+  if (count > 0) node.append(el('span', { class: 'count-badge', 'aria-hidden': 'true' }, String(count)))
+  return node
 }
 
 /** A cited block of code, filled when git answers. Long blocks fold, and open in place. */
@@ -371,7 +714,9 @@ function codeBlock(cite: Cite): HTMLElement {
   const block = el('div', { class: 'code' },
     el('div', { class: 'code-head', title: cite.path },
       el('span', { class: 'file mono' }, name), range,
-      iconButton('external', `Open ${cite.path}`, () => openFile(cite.path), { class: 'icon-btn bare' })),
+      el('span', { class: 'actions-end' },
+        diffButton(cite),
+        iconButton('external', `Open ${cite.path}`, () => openFile(cite.path), { class: 'icon-btn bare' }))),
     body,
     cite.note && el('div', { class: 'note' }, ...rich(cite.note)))
   if (!state.capture) {
@@ -690,26 +1035,13 @@ function startReview(): void {
   ).then(render)
 }
 
-/** Puts text on the clipboard: the async API, else a selected textarea and the copy command. */
+/**
+ * Puts text on the clipboard through the worker. Orca gives this isolated frame no clipboard of
+ * its own, and the old select-and-copy-command trick can report success without copying, so a
+ * false here is honest: the caller shows the text to copy by hand.
+ */
 async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    const area = document.createElement('textarea')
-    area.value = text
-    area.setAttribute('readonly', '')
-    area.style.cssText = 'position: fixed; opacity: 0; top: 0; left: 0'
-    document.body.append(area)
-    area.select()
-    try {
-      return document.execCommand('copy')
-    } catch {
-      return false
-    } finally {
-      area.remove()
-    }
-  }
+  return orca.plugin.request('clipboard.write', { text }).then(() => true, () => false)
 }
 
 /** Copies the open review as Markdown, or shows it to copy by hand when the clipboard refuses. */
@@ -818,10 +1150,19 @@ async function loadCapture(captureId: string): Promise<void> {
   if (state.capture?.id === captureId) return
   pictures.clear()
   cites.clear()
+  diffs.clear()
   state.capture = await orca.plugin.request('captures.get', { captureId }).catch((error) => {
     state.error = `Could not read capture ${captureId}: ${describe(error)}. It shows without its diagrams or code.`
     return null
   })
+  await loadNotes()
+}
+
+async function loadNotes(): Promise<void> {
+  const capture = state.capture
+  state.notes = capture
+    ? await orca.plugin.request('notes.list', { captureId: capture.id }).then(({ notes }) => notes, () => state.notes)
+    : []
 }
 
 async function loadJobs(): Promise<void> {
@@ -863,6 +1204,7 @@ document.addEventListener('keydown', (event) => {
   const total = state.walkthrough?.steps.length ?? 0
   if (total === 0 || state.tab !== 'walkthrough' || event.metaKey || event.ctrlKey || event.altKey) return
   if (event.target instanceof HTMLSelectElement || event.target instanceof HTMLInputElement) return
+  if (document.querySelector('dialog[open]')) return
   if (event.key === 'ArrowRight' || event.key === 'j') goStep(state.step + 1)
   else if (event.key === 'ArrowLeft' || event.key === 'k') goStep(state.step - 1)
   else return
@@ -876,11 +1218,14 @@ orca.plugin.on('jobs.changed', () => void loadJobs().then(render))
 orca.plugin.on('captures.changed', () => {
   pictures.clear()
   cites.clear()
+  diffs.clear()
   const id = state.capture?.id
   if (id) {
-    void orca.plugin.request('captures.get', { captureId: id }).then((capture) => {
+    void orca.plugin.request('captures.get', { captureId: id }).then(async (capture) => {
       state.capture = capture
+      await loadNotes()
       render()
+      repaintDiff?.()
     }, () => undefined)
   }
 })
