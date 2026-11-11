@@ -5,6 +5,24 @@ manifest's `version` matches it. Add to **Unreleased** as you go; a release rena
 
 ## Unreleased
 
+## 0.3.0 - 2026-11-11
+
+### Fixed
+
+- **A skipped walkthrough now shows.** A capture whose diagrams mark more than one box changed
+  or added must have a walkthrough. When it has none, the sidebar marks it **walkthrough
+  missing**, and its page shows a **Capture again** button in place of the walkthrough card. A run
+  of that range is told which captures are missing one and writes them. Before this, a background
+  run could skip a walkthrough "to save budget" and nothing flagged it.
+- The skill and every capture brief now state the rule: count changed boxes, not changed files.
+  Budget is never a reason to skip a walkthrough, and every capture that qualifies gets one.
+
+### Changed
+
+- **One background run per scope.** Capturing several ranges queues a run for each, one after
+  another, each with its own cost cap. Before, every queued capture request went into one run
+  that shared one cap. A request for a scope already in the queue is still dropped.
+
 ## 0.2.0 - 2026-11-11
 
 ### Added
