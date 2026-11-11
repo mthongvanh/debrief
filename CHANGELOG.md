@@ -5,6 +5,8 @@ manifest's `version` matches it. Add to **Unreleased** as you go; a release rena
 
 ## Unreleased
 
+## 0.3.1 - 2026-11-11
+
 ### Fixed
 
 - **A review no longer turns the walkthrough's guess into a bug.** When the code and the
