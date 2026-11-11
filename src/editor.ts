@@ -1120,10 +1120,15 @@ function reviewView(review: Review): Child[] {
       markdownBox()),
     el('section', { id: 'findings' },
       el('h2', {}, 'Findings'),
-      el('p', { class: 'lede small' }, 'Confirmed: traced end to end in the code. Plausible: one step is assumed. Nothing was run.'),
+      el('p', { class: 'lede small' }, 'Confirmed: every step read in the code. ',
+        review.findings.some((f) => f.confidence === 'plausible') && 'Plausible (an older review): one step is assumed. ', 'Nothing was run.'),
       review.findings.length === 0
         ? el('div', { class: 'clean' }, 'Nothing survived verification.')
         : el('div', { class: 'decisions' }, ...review.findings.map(findingCard))),
+    review.walkthroughErrors && el('section', { id: 'walkthrough-errors' },
+      el('h2', {}, 'Walkthrough errors'),
+      el('p', { class: 'lede small' }, 'Where the walkthrough misreads the code. Fix the walkthrough, not the code.'),
+      el('ul', { class: 'checked' }, ...review.walkthroughErrors.map((w) => el('li', {}, ...rich(w))))),
     review.checked.length > 0 && el('section', { id: 'checked' },
       el('h2', {}, 'Also checked'),
       el('p', { class: 'lede small' }, 'Looked at, and nothing was wrong.'),

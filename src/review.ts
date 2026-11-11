@@ -35,6 +35,8 @@ export type Review = {
   findings: Finding[]
   /** Areas looked at where nothing was wrong, so a short list still shows its coverage. */
   checked: string[]
+  /** Where the walkthrough misreads the code: a fix for the walkthrough, not the code. */
+  walkthroughErrors?: string[]
   /** The open pull request the review read, when there was one. */
   pr?: { number: number; url: string }
 }
@@ -51,7 +53,7 @@ export type ReviewSummary = {
   pr?: number
 }
 
-export const REVIEW_LIMITS = { title: 90, failure: 220, why: 220, fix: 160, summary: 200, basis: 200, checked: 120 } as const
+export const REVIEW_LIMITS = { title: 90, failure: 220, why: 220, fix: 160, summary: 200, basis: 200, checked: 120, walkthroughErrors: 220 } as const
 const SEVERITIES: readonly Severity[] = ['high', 'medium', 'low']
 const CONFIDENCES: readonly Confidence[] = ['confirmed', 'plausible']
 
@@ -140,6 +142,9 @@ export function parseReview(json: string): Review {
       .sort((a, b) => order(a) - order(b)),
     checked: list(data.checked, 'checked', 6).map((item, i) => text(item, `checked[${i}]`, REVIEW_LIMITS.checked) as string)
   }
+  const walkthroughErrors = list(data.walkthroughErrors, 'walkthroughErrors', 5)
+    .map((item, i) => text(item, `walkthroughErrors[${i}]`, REVIEW_LIMITS.walkthroughErrors) as string)
+  if (walkthroughErrors.length > 0) review.walkthroughErrors = walkthroughErrors
   if (pr) review.pr = pr
   return review
 }
@@ -179,6 +184,9 @@ export function reviewMarkdown(review: Review, capture: { title: string; base?: 
     )
     if (f.fix) lines.push(`   - Fix: ${f.fix}`)
   })
+  if (review.walkthroughErrors) {
+    lines.push('', 'Walkthrough errors (the walkthrough is wrong, not the code):', ...review.walkthroughErrors.map((w) => `- ${w}`))
+  }
   if (review.checked.length > 0) lines.push('', `Also checked, nothing wrong: ${review.checked.join('; ')}.`)
   return `${lines.join('\n')}\n`
 }

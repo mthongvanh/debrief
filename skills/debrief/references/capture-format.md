@@ -87,6 +87,8 @@ nested in `box`); edges between two focused boxes light up too, and the legend a
 
 Written by a review run (`REVIEW.md`) beside `capture.json`; the panel counts its findings and
 the walkthrough editor shows it. `{version: 1, kind: "review", capture, createdAt, summary,
-basis, findings, checked?}`. Each finding is `{severity: high|medium|low, confidence:
-confirmed|plausible, title, failure, why, fix?, code}`, where `code` is a cite as above. At most
-10 findings and 6 `checked` entries; title 90 characters, failure and why 220, fix 160.
+basis, findings, checked?, walkthroughErrors?}`. Each finding is `{severity: high|medium|low,
+confidence: confirmed, title, failure, why, fix?, code}`, where `code` is a cite as above
+(`plausible` is still read, from reviews written before every step had to be read). At most 10
+findings, 6 `checked` and 5 `walkthroughErrors` entries; title 90 characters, failure, why and
+each walkthrough error 220, fix 160.

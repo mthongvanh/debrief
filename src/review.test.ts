@@ -25,6 +25,8 @@ test('reads a review, most severe first, and counts it', () => {
     ...(valid.pr ? { pr: valid.pr.number } : {})
   })
   assert.deepEqual(parse({ ...valid, findings: [], checked: undefined }).findings, [])
+  assert.ok(!('walkthroughErrors' in review))
+  assert.deepEqual(parse({ ...valid, walkthroughErrors: ['Decision 2 says X; `f` does Y'] }).walkthroughErrors, ['Decision 2 says X; `f` does Y'])
 })
 
 test('tells a review from a walkthrough', () => {
@@ -42,6 +44,7 @@ test('names the bad field and keeps findings short', () => {
   assert.throws(() => parse({ ...valid, findings: [{ ...finding('high'), failure: 'x'.repeat(221) }] }), /keep it to 220/)
   assert.throws(() => parse({ ...valid, findings: Array.from({ length: 11 }, () => finding('low')) }), /keep it to 10/)
   assert.throws(() => parse({ ...valid, createdAt: 'today' }), /createdAt/)
+  assert.throws(() => parse({ ...valid, walkthroughErrors: ['x'.repeat(221)] }), /walkthroughErrors\[0\]/)
 })
 
 test('writes a review as Markdown to paste into a pull request', () => {
@@ -51,7 +54,8 @@ test('writes a review as Markdown to paste into a pull request', () => {
       { ...finding('high', 'Big'), fix: 'Return before `finally` runs.' },
       { ...finding('low', 'Gone'), code: { path: 'lib/b.dart', lines: [3, 3], show: 'before' } }
     ],
-    checked: ['Retry naming', 'Callers of `play`']
+    checked: ['Retry naming', 'Callers of `play`'],
+    walkthroughErrors: ['Step 3 says both must agree; `f` checks one']
   })
   const base = 'a'.repeat(40)
   const markdown = reviewMarkdown(review, { title: 'Turns finish once', base, commit: `${'b'.repeat(40)}+dirty` })
@@ -70,6 +74,9 @@ test('writes a review as Markdown to paste into a pull request', () => {
     '2. **Gone** (low, confirmed) at `lib/b.dart` line 3 (before the change)',
     '   - What breaks: A turn whose audio plays calls `finish` again in `finally`.',
     '   - Why: The `finally` block always runs.',
+    '',
+    'Walkthrough errors (the walkthrough is wrong, not the code):',
+    '- Step 3 says both must agree; `f` checks one',
     '',
     'Also checked, nothing wrong: Retry naming; Callers of `play`.',
     ''

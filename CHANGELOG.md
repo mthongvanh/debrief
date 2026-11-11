@@ -5,6 +5,18 @@ manifest's `version` matches it. Add to **Unreleased** as you go; a release rena
 
 ## Unreleased
 
+### Fixed
+
+- **A review no longer turns the walkthrough's guess into a bug.** When the code and the
+  walkthrough disagree and nothing (a commit, comment, doc or the pull request) states the
+  intent, the review lists it under **Walkthrough errors** instead of as a finding. Before, a
+  review reported code as "contrary to the stated design" when the design was only the
+  walkthrough's `inferred` reading of that same code.
+- **A review makes no assumptions.** Every step of a finding, from the input to what the user
+  sees or gets, must be read in the code, with the call path named. A finding with a step it
+  could not read is dropped; reviews no longer report **plausible** findings. A proposed fix must
+  change the failure it names.
+
 ## 0.3.0 - 2026-11-11
 
 ### Fixed

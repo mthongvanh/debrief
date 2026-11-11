@@ -15,7 +15,10 @@ A capture can be review-only: nothing was drawn, and `capture.summary` says only
 range. Review it the same way.
 
 If `capture.walkthrough` is set, read `<captureDir>/<walkthrough>` first: it says how the change
-is meant to work, step by step. Treat it as a claim to check, not as proof.
+is meant to work, step by step. Another agent wrote it from the same code, so treat it as a claim
+to check, not as proof. A decision marked `evidence: inferred` is that agent's own reading:
+unverified. Only a `stated` one points at the intent, and only if its `source` says so when you
+read it.
 
 If the brief has `pr`, the change is under review on GitHub. Its `body` states what the pull
 request claims (what it fixes, what it does not change, how it was tested): check each claim
@@ -56,13 +59,28 @@ measured or obvious cost, and anything the change did not touch.
 
 ## 3. Verify each candidate
 
-For each candidate, trace the path from an input a user or caller can produce to the wrong
-outcome. Name the input and the outcome in `failure` ("A turn that times out before playback
-calls `finish` twice, so ..."). Drop the candidate if you cannot name both.
+For each candidate, trace the path in the code from an input a user or caller can produce to the
+wrong outcome: what the user sees or gets (the text sent, the screen shown), not an internal
+flag. Read every step, including the code after the defect that could still catch or undo it,
+and a package's source when the path goes through one. Make no assumptions: a step you have not
+read cannot be part of a finding. Name the input and the outcome in `failure` ("A turn that
+times out before playback calls `finish` twice, so ..."), and the call path in `why`
+(`a` → `b` → `c`). Drop the candidate if you cannot read the whole path.
 
-- `confirmed`: every step of the path is in code you read.
-- `plausible`: the path depends on one step you could not read (a platform call, a package),
-  and that step is likely. Say which in `why`.
+Every finding you report has `confidence` set to `confirmed`. Do not report one as `plausible`;
+a finding with an unread step is dropped.
+
+When the code and the walkthrough disagree, decide which one is wrong before reporting:
+
+- A commit body, code comment, doc or the PR body states the intent, and you read it there: the
+  code may be wrong. Verify it as above and name that source in `why`.
+- Nothing states it (an `inferred` point, or a `stated` one whose source does not say it): the
+  walkthrough is unverified, so the mismatch is a walkthrough error, not a finding. Put it in
+  `walkthroughErrors`. A bug there is a finding only on a failure path of its own.
+
+Never call the walkthrough's reading "the design". Before writing `fix`, walk the same input
+through the code as the fix would leave it: if the failure you named still happens, find another
+fix or leave `fix` out.
 
 Severity: `high` loses data, crashes, corrupts state or breaks the main flow; `medium` gives a
 wrong result in a real but narrower case; `low` is a real defect with little effect. At most 10
@@ -90,6 +108,7 @@ Write `reviewFile` once, with Write:
     "code": { "path": "lib/x.dart", "lines": [88, 96] }
   }],
   "checked": ["Areas looked at where nothing was wrong, a few words each"],
+  "walkthroughErrors": ["Decision 2 says X; `f` does Y instead, and nothing states X"],
   "pr": { "number": 2480, "url": "https://github.com/..." }
 }
 ```
@@ -102,6 +121,8 @@ Write `reviewFile` once, with Write:
   `backticks` mark code names. The editor refuses longer text and names the field.
 - `checked`: up to 6 short entries, so a short list of findings still shows its coverage. With
   a pull request, one entry says how its description's claims held up.
+- `walkthroughErrors`: up to 5, 220 characters each: which step or decision, what it says, and
+  what the code does instead. Leave it out when the walkthrough held up or there is none.
 - `pr`: only when the brief has one; leave it out otherwise.
 
 Then reply with one line: the number of findings by severity, and the file written.

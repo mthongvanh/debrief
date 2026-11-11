@@ -41,12 +41,13 @@ panel:
   reachable from a plugin, so these are separate from them.
 - **Code review:** Review code (on a capture in the sidebar, or in its walkthrough) queues a
   background run that reviews the capture's change for bugs: logic, async, state, error
-  handling and broken callers, not style. It checks each finding by tracing the code from an
-  input to the wrong outcome, and drops it if it can't name both. The findings open in the
-  same editor tab: severity, confirmed or plausible, what breaks, why, a fix, and the cited
+  handling and broken callers, not style. It checks each finding by reading the code from an
+  input to what the user sees or gets, assuming nothing, and drops it if it can't read the whole
+  path. The findings open in the same editor tab: severity, what breaks, why, a fix, and the cited
   diff. Copy as Markdown puts the summary and findings on the clipboard, to paste into a pull
   request comment yourself. The run's instructions are `skills/debrief/REVIEW.md`; it reads
-  the walkthrough, if there is one, as a claim to check. It does not build or run tests.
+  the walkthrough, if there is one, as a claim to check: where the two disagree and nothing
+  states the intent, it lists a walkthrough error, not a finding. It does not build or run tests.
 
   A review doesn't need a capture first. Review, next to Capture at the top of the panel, on
   each timeline row and in Capture between two commits, reviews that scope without drawing it.
