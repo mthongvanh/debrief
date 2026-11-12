@@ -5,6 +5,8 @@ manifest's `version` matches it. Add to **Unreleased** as you go; a release rena
 
 ## Unreleased
 
+## 0.3.2 - 2026-11-12
+
 ### Fixed
 
 - **The look step works again, and says so when it doesn't.** `look.sh` turned a relative
