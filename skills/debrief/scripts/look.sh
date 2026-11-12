@@ -21,6 +21,8 @@ if [[ -z "$chrome" ]]; then
 fi
 
 mkdir -p "$out_dir"
+# Chrome loads the page as a file:// URL, which must be absolute; the brief's lookDir is relative.
+out_dir="$(cd "$out_dir" && pwd)"
 for svg in "$@"; do
   # viewBox="minX minY W H": height scaled to the display width.
   read -r vw vh < <(grep -o 'viewBox="[^"]*"' "$svg" | head -1 | tr -d '"' | awk '{print $3, $4}')
@@ -29,8 +31,13 @@ for svg in "$@"; do
   html="$out_dir/.look-$$.html"
   printf '<html><body style="margin:0"><img src="file://%s" style="width:%spx;display:block"></body></html>' \
     "$(cd "$(dirname "$svg")" && pwd)/$(basename "$svg")" "$width" > "$html"
+  rm -f "$png" # so a screenshot from an earlier run can't pass the check below
   "$chrome" --headless=new --disable-gpu --hide-scrollbars --allow-file-access-from-files \
-    --window-size="$width,$height" --screenshot="$png" "file://$html" 2>/dev/null
+    --window-size="$width,$height" --screenshot="$png" "file://$html" 2>/dev/null || true
   rm -f "$html"
+  if [[ ! -s "$png" ]]; then
+    echo "look.sh: Chrome wrote no screenshot of $svg (expected $png); it was not looked at" >&2
+    exit 1
+  fi
   echo "$png  (${vw}x${vh} shown at ${width}x${height}; text at $(awk -v w="$width" -v vw="$vw" 'BEGIN { printf "%d", 100 * w / vw }')%)"
 done

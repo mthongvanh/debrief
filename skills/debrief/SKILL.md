@@ -126,8 +126,8 @@ d2 prints `file:line:col: message` on errors. Then look once at all views togeth
 
 It prints each PNG's path and the text size at 850 px. Read the PNGs. Fix colliding edge labels,
 a legend on edges, text under about 60 %, and for a modification any box that moved between
-before and after. Re-render only what you fixed; one look after fixes is enough. No Chrome: say
-the diagrams were not looked at.
+before and after. Re-render only what you fixed; one look after fixes is enough. If look.sh
+fails (no Chrome, or no screenshot written), say the diagrams were not looked at.
 
 ## 5. Walkthrough
 

@@ -5,6 +5,14 @@ manifest's `version` matches it. Add to **Unreleased** as you go; a release rena
 
 ## Unreleased
 
+### Fixed
+
+- **The look step works again, and says so when it doesn't.** `look.sh` turned a relative
+  out-dir (every brief's `lookDir` is relative) into an invalid `file://` URL, so Chrome wrote
+  no screenshots, yet the script printed each PNG path as if it had. The agent then read PNGs
+  that weren't there, and a background run stalled. `look.sh` now makes the out-dir absolute,
+  and exits with an error naming the diagram when Chrome writes no screenshot.
+
 ## 0.3.1 - 2026-11-11
 
 ### Fixed
